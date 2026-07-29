@@ -1,0 +1,76 @@
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+  font-family: 'Segoe UI', 'Trebuchet MS', system-ui, sans-serif;
+  background: #0b0e14; color: #e8ecf1;
+}
+
+#app { position: relative; width: 100vw; height: 100vh; }
+#viewport { position: absolute; inset: 0; display: block; }
+
+.hud {
+  position: absolute;
+  background: rgba(14, 18, 26, 0.88);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.35);
+}
+
+#topbar {
+  top: 12px; left: 12px; right: 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 16px; height: 44px;
+}
+.brand-title { font-weight: 700; font-size: 16px; color: #f4a94a; }
+.topbar-group.stats { display: flex; gap: 20px; }
+.stat { font-size: 14px; display: flex; align-items: center; gap: 6px; }
+
+#hint-banner {
+  top: 66px; left: 50%; transform: translateX(-50%);
+  padding: 6px 16px; font-size: 13px; color: #cfd6e2;
+  white-space: nowrap;
+}
+
+#toolbar {
+  top: 66px; right: 12px; bottom: 12px; width: 260px;
+  padding: 14px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.toolbar-section h3 {
+  margin: 0 0 8px; font-size: 12px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: #93a0b4;
+}
+.picker-list { display: flex; flex-direction: column; gap: 6px; }
+.picker-btn {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+  color: #e8ecf1; padding: 8px 10px; border-radius: 8px; cursor: pointer;
+  font-size: 13px; text-align: left;
+}
+.picker-btn:hover { background: rgba(255,255,255,0.1); }
+.picker-btn.active { border-color: #f4a94a; background: rgba(244, 169, 74, 0.18); }
+.picker-icon { font-size: 16px; }
+.picker-sub { font-size: 11px; color: #93a0b4; }
+
+.action-btn {
+  width: 100%; background: #2a3040; border: 1px solid rgba(255,255,255,0.1);
+  color: #e8ecf1; padding: 9px 10px; border-radius: 8px; cursor: pointer;
+  font-size: 13px; margin-bottom: 8px;
+}
+.action-btn:hover { background: #333b4e; }
+
+.cost-label { font-size: 14px; font-weight: 600; color: #6fcf7c; }
+.cost-label.cost-bad { color: #e0704f; }
+
+#toast-container {
+  position: absolute; top: 110px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  pointer-events: none; z-index: 50;
+}
+.toast {
+  background: rgba(20, 24, 32, 0.95); border: 1px solid rgba(255,255,255,0.15);
+  padding: 8px 16px; border-radius: 8px; font-size: 13px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+}
+.toast.warn { border-color: #e0704f; color: #ffb199; }

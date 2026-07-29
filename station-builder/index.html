@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Station Builder</title>
+<link rel="stylesheet" href="css/style.css" />
+<link rel="icon" href="data:,">
+<script type="importmap">
+{
+  "imports": {
+    "three": "../js/vendor/three/three.module.js",
+    "three/addons/": "../js/vendor/three/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+
+  <div id="app">
+    <canvas id="viewport"></canvas>
+
+    <div id="topbar" class="hud">
+      <div class="topbar-group brand">
+        <span class="brand-title">🏗️ Station Builder</span>
+      </div>
+      <div class="topbar-group stats">
+        <div class="stat" title="Budget">💰 <span id="stat-budget">$0</span></div>
+        <div class="stat" title="Stations built">🏢 <span id="stat-station-count">0</span></div>
+      </div>
+    </div>
+
+    <div id="hint-banner" class="hud"></div>
+
+    <div id="toolbar" class="hud">
+      <div class="toolbar-section">
+        <h3>Station Type</h3>
+        <div id="type-list" class="picker-list"></div>
+      </div>
+      <div class="toolbar-section">
+        <h3>Size Tier</h3>
+        <div id="tier-list" class="picker-list"></div>
+      </div>
+      <div class="toolbar-section">
+        <button id="btn-rotate" class="action-btn">⟳ Rotate (R)</button>
+        <div id="cost-label" class="cost-label">Cost: $0</div>
+      </div>
+    </div>
+
+    <div id="toast-container"></div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
