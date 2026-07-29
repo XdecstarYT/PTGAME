@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Transit Tycoon 3D</title>
+<link rel="stylesheet" href="css/style.css" />
+<link rel="icon" href="data:,">
+<script type="importmap">
+{
+  "imports": {
+    "three": "./js/vendor/three/three.module.js",
+    "three/addons/": "./js/vendor/three/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+
+  <div id="app">
+
+    <!-- 3D render target -->
+    <canvas id="viewport"></canvas>
+
+    <!-- 2D schematic map overlay -->
+    <canvas id="schematic" class="hidden"></canvas>
+
+    <!-- Top HUD bar -->
+    <div id="topbar" class="hud">
+      <div class="topbar-group brand">
+        <span class="brand-title">🚆 Transit Tycoon</span>
+      </div>
+      <div class="topbar-group stats">
+        <div class="stat" id="stat-budget" title="Budget">💰 <span>$0</span></div>
+        <div class="stat" id="stat-satisfaction" title="Citywide Satisfaction">😊 <span>--%</span></div>
+        <div class="stat" id="stat-ridership" title="Daily Ridership">🧍 <span>0</span></div>
+        <div class="stat" id="stat-date" title="Date / Time">🗓️ <span>Day 1, 06:00</span></div>
+      </div>
+      <div class="topbar-group speed-controls">
+        <button data-speed="0" class="speed-btn" title="Pause">⏸</button>
+        <button data-speed="1" class="speed-btn active" title="1x">▶</button>
+        <button data-speed="2" class="speed-btn" title="2x">▶▶</button>
+        <button data-speed="4" class="speed-btn" title="4x">▶▶▶</button>
+      </div>
+      <div class="topbar-group view-toggle">
+        <button id="btn-view-toggle" title="Toggle schematic map">🗺️ Map</button>
+      </div>
+    </div>
+
+    <!-- Left toolbar -->
+    <div id="toolbar" class="hud">
+      <button class="tool-btn active" data-tool="select" title="Select">🖱️<span>Select</span></button>
+      <button class="tool-btn" data-tool="station" title="Place Station">📍<span>Station</span></button>
+      <button class="tool-btn" data-tool="route" title="Draw Route">➰<span>Route</span></button>
+      <button class="tool-btn" data-tool="vehicle" title="Add Vehicle">🚌<span>Vehicle</span></button>
+      <button class="tool-btn" data-tool="delete" title="Delete">🗑️<span>Delete</span></button>
+    </div>
+
+    <!-- Right side panel -->
+    <div id="sidepanel" class="hud hidden">
+      <div class="panel-header">
+        <span id="panel-title">Details</span>
+        <button id="panel-close">✕</button>
+      </div>
+      <div id="panel-content"></div>
+    </div>
+
+    <!-- Bottom finance / route strip -->
+    <div id="bottombar" class="hud">
+      <button id="btn-finance" title="Finance Dashboard">📊 Finance</button>
+      <button id="btn-routes" title="Route List">🚏 Routes</button>
+      <div id="route-chip-strip"></div>
+    </div>
+
+    <!-- Modal layer -->
+    <div id="modal-layer" class="hidden">
+      <div id="modal-box">
+        <div class="modal-header">
+          <span id="modal-title">Title</span>
+          <button id="modal-close">✕</button>
+        </div>
+        <div id="modal-content"></div>
+      </div>
+    </div>
+
+    <!-- Toast notifications -->
+    <div id="toast-container"></div>
+
+    <!-- Route drawing helper banner -->
+    <div id="tool-hint" class="hidden"></div>
+
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
