@@ -48,6 +48,18 @@
     </div>
 
     <div id="toast-container"></div>
+
+    <!-- Layout editor: full-screen overlay shown when a station is selected -->
+    <div id="editor-overlay" class="hidden">
+      <div id="editor-topbar" class="hud">
+        <button id="btn-editor-back" class="action-btn small">← Back to Map</button>
+        <span id="editor-station-name">Station</span>
+        <div id="editor-level-tabs"></div>
+      </div>
+      <canvas id="layout-canvas"></canvas>
+      <div id="editor-palette" class="hud"></div>
+      <div id="editor-stats" class="hud"></div>
+    </div>
   </div>
 
   <script type="module" src="js/main.js"></script>

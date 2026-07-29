@@ -56,3 +56,48 @@ export function stationType(id) { return STATION_TYPES.find(t => t.id === id); }
 // How close (in cells) a footprint edge must be to the relevant map feature
 // for placement to be considered valid.
 export const ACCESS_TOLERANCE_CELLS = 2;
+
+// ---------------- Layout editor (Phase 2) ----------------
+
+// Interior objects are painted at a finer resolution than the outdoor
+// placement grid - 1 layout cell = 1 meter, vs. CELL_SIZE=2m outdoors.
+export const LAYOUT_CELL_SIZE = 1;
+
+// category: 'platform' | 'circulation' | 'amenity' | 'entrance'
+// walkable: whether a passenger/player can occupy this cell (used for the
+// Phase 3 walk-mode collision map and for stat-engine pathing approximations).
+export const INTERIOR_OBJECTS = [
+  { id: 'empty', name: 'Erase', icon: '⬛', category: 'empty', color: '#2b2f38', cost: 0, walkable: true },
+  { id: 'platform', name: 'Platform Edge', icon: '🟧', category: 'platform', color: '#d98a3d', cost: 400, walkable: true },
+  { id: 'waiting_area', name: 'Waiting Area', icon: '🟩', category: 'amenity', color: '#6fae6f', cost: 150, walkable: true },
+  { id: 'bench', name: 'Bench / Seating', icon: '🪑', category: 'amenity', color: '#a97c50', cost: 300, walkable: false },
+  { id: 'ticket_machine', name: 'Ticket Machine', icon: '🎫', category: 'amenity', color: '#5b8ac9', cost: 2500, walkable: false },
+  { id: 'turnstile', name: 'Turnstile / Gate', icon: '🚧', category: 'circulation', color: '#c9a63d', cost: 1800, walkable: true },
+  { id: 'info_board', name: 'Information Board', icon: 'ℹ️', category: 'amenity', color: '#4a6fa5', cost: 600, walkable: false },
+  { id: 'kiosk', name: 'Kiosk / Shop', icon: '🏪', category: 'amenity', color: '#c15fa0', cost: 8000, walkable: false },
+  { id: 'restroom', name: 'Restroom', icon: '🚻', category: 'amenity', color: '#5fb0b0', cost: 12000, walkable: false },
+  { id: 'entrance', name: 'Entrance / Exit', icon: '🚪', category: 'entrance', color: '#e8e8e8', cost: 1000, walkable: true },
+  { id: 'stairs', name: 'Stairs', icon: '🪜', category: 'circulation', color: '#8f8f8f', cost: 4000, walkable: true },
+  { id: 'escalator', name: 'Escalator', icon: '🔼', category: 'circulation', color: '#4fae8f', cost: 15000, walkable: true },
+  { id: 'elevator', name: 'Elevator (accessible)', icon: '🛗', category: 'circulation', color: '#4f8fae', cost: 25000, walkable: true, accessible: true },
+];
+
+export function interiorObject(id) { return INTERIOR_OBJECTS.find(o => o.id === id); }
+
+// Minimum entrance/exit count expected for a station's size tier.
+export const MIN_ENTRANCES = { small: 1, medium: 2, large: 3, mega: 4 };
+
+// Rough target passenger throughput (per hour) used only to contextualize
+// the computed capacity stat - see docs/stat-formulas.md.
+export const TARGET_THROUGHPUT = { small: 300, medium: 1200, large: 4000, mega: 9000 };
+
+// Approximate consist/vehicle length (meters) a platform should fit for
+// each station type, until this tool is wired up to the real vehicle
+// designer's chassis dimensions.
+export const REQUIRED_PLATFORM_LENGTH_M = {
+  bus_stop: 14, tram_stop: 32, subway: 120, rail: 200, ferry: 60, interchange: 120,
+};
+
+// Cost (per footprint cell, i.e. per CELL_SIZE x CELL_SIZE area) to unlock
+// each additional level beyond the first, up to the tier's maxLevels.
+export const LEVEL_COST_PER_CELL = 500;

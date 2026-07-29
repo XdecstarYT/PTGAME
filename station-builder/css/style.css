@@ -74,3 +74,70 @@ html, body {
   box-shadow: 0 4px 14px rgba(0,0,0,0.4);
 }
 .toast.warn { border-color: #e0704f; color: #ffb199; }
+
+/* ---------------- Layout editor ---------------- */
+
+#editor-overlay {
+  position: absolute; inset: 0; background: #10131a; z-index: 100;
+}
+#editor-overlay.hidden { display: none; }
+
+#editor-topbar {
+  top: 12px; left: 12px; right: 12px;
+  display: flex; align-items: center; gap: 16px;
+  padding: 8px 16px; height: 44px;
+}
+.action-btn.small { width: auto; margin: 0; padding: 7px 12px; font-size: 12px; }
+#editor-station-name { font-weight: 700; color: #f4a94a; white-space: nowrap; }
+#editor-level-tabs { display: flex; gap: 6px; flex: 1; }
+.level-tab {
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+  color: #e8ecf1; padding: 6px 12px; border-radius: 7px; cursor: pointer; font-size: 12px;
+}
+.level-tab.active { border-color: #f4a94a; background: rgba(244, 169, 74, 0.18); }
+.level-tab.add-level { color: #9fd18f; border-style: dashed; }
+
+#layout-canvas {
+  position: absolute; top: 66px; left: 300px; right: 300px; bottom: 12px;
+  width: calc(100% - 612px); height: calc(100% - 78px);
+  background: #181c24; border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+#editor-palette {
+  top: 66px; left: 12px; width: 276px; bottom: 12px;
+  padding: 14px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.palette-btn {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+  color: #e8ecf1; padding: 8px 10px; border-radius: 8px; cursor: pointer;
+  font-size: 13px; text-align: left;
+}
+.palette-btn:hover { background: rgba(255,255,255,0.1); }
+.palette-btn.active { border-color: #f4a94a; background: rgba(244, 169, 74, 0.18); }
+.palette-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+.palette-name { flex: 1; }
+.palette-cost { font-size: 11px; color: #93a0b4; }
+
+#editor-stats {
+  top: 66px; right: 12px; width: 276px; bottom: 12px;
+  padding: 14px; overflow-y: auto;
+}
+#editor-stats h3 {
+  margin: 0 0 8px; font-size: 12px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: #93a0b4;
+}
+.stat-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 13px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.stat-row .stat-val { font-weight: 600; }
+.stat-row .stat-val.bad { color: #e0704f; }
+.stat-row .stat-val.good { color: #6fcf7c; }
+.warning-list { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.warning-item {
+  font-size: 12px; color: #ffb199; background: rgba(224, 112, 79, 0.12);
+  border: 1px solid rgba(224, 112, 79, 0.3); border-radius: 6px; padding: 6px 8px;
+}
