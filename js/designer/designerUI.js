@@ -204,6 +204,7 @@ export class VehicleDesigner {
           <option value="solid" ${this.model.livery.pattern === 'solid' ? 'selected' : ''}>Solid</option>
           <option value="stripe" ${this.model.livery.pattern === 'stripe' ? 'selected' : ''}>Stripe</option>
           <option value="twotone" ${this.model.livery.pattern === 'twotone' ? 'selected' : ''}>Two-tone</option>
+          <option value="adwrap" ${this.model.livery.pattern === 'adwrap' ? 'selected' : ''}>Ad Wrap (sells ad space instead of a paint job)</option>
         </select>
       </div>
       <h4>Consist</h4>
@@ -261,6 +262,7 @@ export class VehicleDesigner {
       <div class="row"><span>Doors / Accessible bays</span><b>${s.doorCount} / ${s.accessibleBays}</b></div>
       <div class="row"><span>Purchase cost</span><b>${fmtMoney(s.purchaseCost)}</b></div>
       <div class="row"><span>Running cost/day</span><b>${fmtMoney(s.runningCostPerDay)}</b></div>
+      ${s.adRevenuePerDay ? `<div class="row"><span>Ad revenue/day</span><b style="color:#6ee7c9">+${fmtMoney(s.adRevenuePerDay)}</b></div>` : ''}
       <div class="row"><span>Top speed</span><b>${s.topSpeed}</b></div>
       <div class="row"><span>Comfort</span><b>${s.comfortScore}</b></div>
       <div class="row"><span>Boarding speed</span><b>${s.boardingSpeedScore}</b></div>

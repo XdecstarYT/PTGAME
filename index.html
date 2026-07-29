@@ -19,6 +19,19 @@
 
   <div id="app">
 
+    <!-- Start menu: scenario / continue picker, shown before play begins -->
+    <div id="start-menu">
+      <div id="start-menu-box">
+        <h1>🚆 Transit Tycoon</h1>
+        <div id="start-continue-section"></div>
+        <h4>Choose a city</h4>
+        <div id="start-scenario-grid"></div>
+        <div style="margin-top:14px">
+          <label class="action secondary" style="cursor:pointer;display:inline-block">Import Custom Scenario<input type="file" id="start-import-scenario" accept=".json" class="hidden"></label>
+        </div>
+      </div>
+    </div>
+
     <!-- 3D render target -->
     <canvas id="viewport"></canvas>
 
@@ -34,6 +47,7 @@
         <div class="stat" id="stat-budget" title="Budget">💰 <span>$0</span></div>
         <div class="stat" id="stat-satisfaction" title="Citywide Satisfaction">😊 <span>--%</span></div>
         <div class="stat" id="stat-ridership" title="Daily Ridership">🧍 <span>0</span></div>
+        <div class="stat" id="stat-congestion" title="Road Congestion">🚗 <span>0%</span></div>
         <div class="stat" id="stat-date" title="Date / Time">🗓️ <span>Day 1, 06:00</span></div>
       </div>
       <div class="topbar-group speed-controls">
@@ -45,8 +59,13 @@
       <div class="topbar-group view-toggle">
         <button id="btn-design-vehicle" title="Vehicle Designer">🛠️ Design Vehicle</button>
         <button id="btn-view-toggle" title="Toggle schematic map">🗺️ Map</button>
+        <button id="btn-heatmap-toggle" title="Cycle demand/crowding heatmap (schematic view only)">🔥 Heatmap: Off</button>
+        <button id="btn-audio-toggle" title="Toggle ambient sound">🔇</button>
       </div>
     </div>
+
+    <!-- Ambient news ticker -->
+    <div id="news-ticker" class="hud">📰 <span id="news-ticker-text">The city hums along quietly today.</span></div>
 
     <!-- Left toolbar -->
     <div id="toolbar" class="hud">
@@ -70,6 +89,9 @@
     <div id="bottombar" class="hud">
       <button id="btn-finance" title="Finance Dashboard">📊 Finance</button>
       <button id="btn-routes" title="Route List">🚏 Routes</button>
+      <button id="btn-disruptions" title="Active Disruptions">⚠️ Disruptions<span id="disruption-badge" class="badge hidden">0</span></button>
+      <button id="btn-contracts" title="Council Contracts">📜 Contracts<span id="contract-badge" class="badge hidden">0</span></button>
+      <button id="btn-save-load" title="Save / Load">💾 Save/Load</button>
       <div id="route-chip-strip"></div>
     </div>
 

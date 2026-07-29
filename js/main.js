@@ -10,6 +10,13 @@ import { UIController } from './ui.js';
 import { SchematicView } from './schematicView.js';
 import { Catalog } from './designer/catalog.js';
 import { VehicleDesigner } from './designer/designerUI.js';
+import { EventSystem } from './events.js';
+import { ContractSystem } from './contracts.js';
+import { Staffing } from './staffing.js';
+import { NewsTicker } from './newsTicker.js';
+import { AudioSystem } from './audio.js';
+import { SaveLoadSystem } from './saveLoad.js';
+import { allScenarios, exportScenario, importScenarioFromFile, deleteCustomScenario } from './scenarios.js';
 
 const canvas = document.getElementById('viewport');
 const sceneManager = new SceneManager(canvas);
@@ -22,10 +29,11 @@ const catalog = new Catalog();
 const network = new Network(city, catalog);
 network.buildMeshes(sceneManager.scene);
 
-const vehicleSystem = new VehicleSystem(network, catalog);
+const economy = new Economy();
+
+const vehicleSystem = new VehicleSystem(network, catalog, economy);
 vehicleSystem.buildMeshes(sceneManager.scene);
 
-const economy = new Economy();
 const passengerSystem = new PassengerSystem(city, network, economy, vehicleSystem);
 passengerSystem.buildMeshes(sceneManager.scene);
 
@@ -43,6 +51,90 @@ ui.setSchematicView(schematicView);
 const vehicleDesigner = new VehicleDesigner({ catalog, network, economy, ui });
 ui.setVehicleDesigner(vehicleDesigner);
 document.getElementById('btn-design-vehicle').addEventListener('click', () => vehicleDesigner.open());
+
+const staffing = new Staffing(economy);
+ui.setStaffing(staffing);
+
+const eventSystem = new EventSystem({ network, vehicleSystem, economy, city, ui, staffing });
+ui.setEventSystem(eventSystem);
+
+const contractSystem = new ContractSystem({ city, network, economy, passengerSystem, ui });
+ui.setContractSystem(contractSystem);
+
+const newsTicker = new NewsTicker({
+  el: document.getElementById('news-ticker-text'),
+  network, economy, passengerSystem, vehicleSystem, catalog,
+});
+
+const saveLoadSystem = new SaveLoadSystem({
+  city, network, vehicleSystem, economy, timeSystem, eventSystem, contractSystem, staffing, ui, schematicView,
+});
+
+function fmtWhen(ts) {
+  const d = new Date(ts);
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function openSaveLoadModal() {
+  const slots = saveLoadSystem.listSlots();
+  const rows = slots.map((meta, i) => `
+    <div class="disruption-item">
+      <span>Slot ${i + 1}${meta ? ` - Day ${meta.day}, ${fmtMoneyLocal(meta.budget)}<br><span style="font-size:11px">${fmtWhen(meta.savedAt)}</span>` : ' - empty'}</span>
+      <span>
+        <button class="action secondary" data-save-slot="${i}">Save</button>
+        ${meta ? `<button class="action secondary" data-load-slot="${i}">Load</button><button class="action danger" data-delete-slot="${i}">Delete</button>` : ''}
+      </span>
+    </div>`).join('');
+  ui.openModal('Save / Load', rows);
+  ui.dom.modalContent.querySelectorAll('[data-save-slot]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      saveLoadSystem.save(Number(btn.dataset.saveSlot));
+      ui.showToast('Game saved.');
+      openSaveLoadModal();
+    });
+  });
+  ui.dom.modalContent.querySelectorAll('[data-load-slot]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (saveLoadSystem.load(Number(btn.dataset.loadSlot))) {
+        checkMilestones();
+        ui.closeModal();
+        ui.showToast('Game loaded.');
+      } else {
+        ui.showToast('Could not load that slot.');
+      }
+    });
+  });
+  ui.dom.modalContent.querySelectorAll('[data-delete-slot]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      saveLoadSystem.deleteSlot(Number(btn.dataset.deleteSlot));
+      openSaveLoadModal();
+    });
+  });
+}
+function fmtMoneyLocal(n) { return `$${Math.round(n).toLocaleString('en-US')}`; }
+document.getElementById('btn-save-load').addEventListener('click', openSaveLoadModal);
+
+const heatmapBtn = document.getElementById('btn-heatmap-toggle');
+const heatmapCycle = ['off', 'demand', 'crowding'];
+const heatmapLabels = { off: 'Off', demand: 'Demand', crowding: 'Crowding' };
+heatmapBtn.addEventListener('click', () => {
+  const next = heatmapCycle[(heatmapCycle.indexOf(schematicView.heatmapMode) + 1) % heatmapCycle.length];
+  schematicView.setHeatmapMode(next);
+  heatmapBtn.textContent = `🔥 Heatmap: ${heatmapLabels[next]}`;
+  heatmapBtn.classList.toggle('active', next !== 'off');
+});
+
+const audioSystem = new AudioSystem();
+const audioBtn = document.getElementById('btn-audio-toggle');
+audioBtn.addEventListener('click', () => {
+  const on = audioSystem.toggleMute();
+  audioBtn.textContent = on ? '🔊' : '🔇';
+});
+vehicleSystem.on('arrive', ({ vehicle }) => {
+  audioSystem.playArrivalChime();
+  const model = catalog.get(vehicle.modelId);
+  if (model) audioSystem.playDeparture(model.powertrainId);
+});
 
 sceneManager.setTimeOfDay(timeSystem.hour);
 ui.refreshHud();
@@ -119,6 +211,7 @@ timeSystem.on('tick', (simMinutes) => {
   passengerSystem.update(simMinutes, hour);
   vehicleSystem.update(simMinutes);
   sceneManager.setTimeOfDay(hour);
+  audioSystem.setRushHourIntensity(TimeSystem.demandMultiplier(hour));
 });
 
 let pendingUnlockNotes = [];
@@ -129,6 +222,13 @@ timeSystem.on('newDay', (newDay) => {
   const coverage = network.coveragePercent();
   economy.applyDailyCosts(network);
   economy.closeDay(endedDay, satisfaction, coverage);
+
+  // ambient daily nudge: a poorly-covered city drifts toward more car traffic
+  economy.congestion = Math.max(0, Math.min(100, economy.congestion + (1 - coverage) * 8 - coverage * 4));
+
+  eventSystem.onNewDay(newDay);
+  contractSystem.onNewDay(newDay);
+  staffing.onNewDay(network);
 
   const last = economy.history[economy.history.length - 1];
   if (last) ui.showDayToast(endedDay, last);
@@ -173,6 +273,7 @@ function animate(now) {
   sceneManager.render();
   if (schematicView.visible) schematicView.render();
   if (vehicleDesigner.isOpen) vehicleDesigner.render(dt / 1000);
+  newsTicker.update(dt);
 
   hudAccum += dt;
   if (hudAccum > 400) {
@@ -182,3 +283,82 @@ function animate(now) {
   }
 }
 requestAnimationFrame(animate);
+
+// ---------------- start menu ----------------
+
+function setSpeedButtons(speed) {
+  timeSystem.setSpeed(speed);
+  for (const b of document.querySelectorAll('.speed-btn')) b.classList.toggle('active', Number(b.dataset.speed) === speed);
+}
+
+function hideStartMenu() {
+  document.getElementById('start-menu').classList.add('hidden');
+}
+
+function renderStartMenu() {
+  const continueSection = document.getElementById('start-continue-section');
+  const slots = saveLoadSystem.listSlots();
+  const anySaves = slots.some(Boolean);
+  continueSection.innerHTML = anySaves ? `<h4>Continue</h4>${slots.map((meta, i) => meta ? `
+    <div class="continue-row">
+      <span>Slot ${i + 1} - Day ${meta.day}, $${Math.round(meta.budget).toLocaleString('en-US')}</span>
+      <button class="action" data-continue-slot="${i}">Continue</button>
+    </div>` : '').join('')}` : '';
+  continueSection.querySelectorAll('[data-continue-slot]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (saveLoadSystem.load(Number(btn.dataset.continueSlot))) {
+        checkMilestones();
+        for (const b of document.querySelectorAll('.speed-btn')) b.classList.toggle('active', Number(b.dataset.speed) === timeSystem.speed);
+        hideStartMenu();
+      }
+    });
+  });
+
+  const grid = document.getElementById('start-scenario-grid');
+  grid.innerHTML = allScenarios().map(sc => `
+    <div class="scenario-card">
+      <h5>${sc.name}</h5>
+      <p>${sc.description || ''}</p>
+      <div class="scenario-actions">
+        <button class="action" data-play-scenario="${sc.id}">Play</button>
+        <button class="action secondary" data-export-scenario="${sc.id}">Export</button>
+        ${sc.builtin ? '' : `<button class="action danger" data-delete-scenario="${sc.id}">Delete</button>`}
+      </div>
+    </div>`).join('');
+  const scenarioList = allScenarios();
+  grid.querySelectorAll('[data-play-scenario]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sc = scenarioList.find(s => s.id === btn.dataset.playScenario);
+      if (!sc) return;
+      const seed = sc.randomSeed ? Math.floor(Math.random() * 1e9) : sc.seed;
+      city.regenerateWithScenario(seed, sc.config);
+      network.resetAll();
+      vehicleSystem.resetAll();
+      network.refreshMeshes();
+      ui.refreshRouteChips();
+      ui.refreshHud();
+      schematicView.markDirty();
+      setSpeedButtons(1);
+      hideStartMenu();
+    });
+  });
+  grid.querySelectorAll('[data-export-scenario]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sc = scenarioList.find(s => s.id === btn.dataset.exportScenario);
+      if (sc) exportScenario(sc);
+    });
+  });
+  grid.querySelectorAll('[data-delete-scenario]').forEach(btn => {
+    btn.addEventListener('click', () => { deleteCustomScenario(btn.dataset.deleteScenario); renderStartMenu(); });
+  });
+}
+
+document.getElementById('start-import-scenario').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try { await importScenarioFromFile(file); renderStartMenu(); }
+  catch (err) { ui.showToast(err.message); }
+});
+
+setSpeedButtons(0);
+renderStartMenu();

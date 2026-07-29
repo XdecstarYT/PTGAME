@@ -14,6 +14,9 @@ export class SchematicView {
     this.onTileClick = onTileClick;
     this.visible = false;
     this._dirty = true;
+    this.heatmapMode = 'off'; // 'off' | 'demand' | 'crowding'
+    this._heatmapCache = null;
+    this._heatmapCacheAt = -Infinity;
 
     this._staticCanvas = document.createElement('canvas');
     this._staticCtx = this._staticCanvas.getContext('2d');
@@ -24,6 +27,76 @@ export class SchematicView {
   }
 
   markDirty() { this._dirty = true; }
+
+  setHeatmapMode(mode) {
+    this.heatmapMode = mode;
+    this._heatmapCacheAt = -Infinity; // force recompute on next render
+  }
+
+  _demandHeatmapPoints() {
+    const { residential, jobsZones } = this.city.demandZones();
+    const stations = [...this.network.stations.values()];
+    const points = [];
+    let maxVal = 1;
+    for (const tile of [...residential, ...jobsZones]) {
+      const val = tile.type === ZONE.RESIDENTIAL ? this.city.effectivePopulation(tile) : this.city.effectiveJobs(tile);
+      if (val < 1) continue;
+      const covered = stations.some(s => Math.hypot(s.worldX - tile.worldX, s.worldZ - tile.worldZ) <= s.radius);
+      if (covered) continue;
+      points.push({ tile, val });
+      if (val > maxVal) maxVal = val;
+    }
+    return points.map(p => ({ tile: p.tile, intensity: p.val / maxVal }));
+  }
+
+  _crowdingHeatmapRoutes() {
+    const out = [];
+    for (const route of this.network.routes.values()) {
+      if (!route.committed) continue;
+      const vehicles = route.vehicleIds.map(id => this.vehicleSystem.vehicles.get(id)).filter(Boolean);
+      if (!vehicles.length) continue;
+      const avgLoad = vehicles.reduce((a, v) => a + v.passengers.length / Math.max(1, v.capacity), 0) / vehicles.length;
+      out.push({ route, avgLoad });
+    }
+    return out;
+  }
+
+  _refreshHeatmapCache() {
+    const now = performance.now();
+    if (now - this._heatmapCacheAt < 1500) return;
+    this._heatmapCacheAt = now;
+    if (this.heatmapMode === 'demand') this._heatmapCache = this._demandHeatmapPoints();
+    else if (this.heatmapMode === 'crowding') this._heatmapCache = this._crowdingHeatmapRoutes();
+    else this._heatmapCache = null;
+  }
+
+  _drawHeatmap(ctx) {
+    if (this.heatmapMode === 'off' || !this._heatmapCache) return;
+    if (this.heatmapMode === 'demand') {
+      const size = 13 * this.scale;
+      for (const { tile, intensity } of this._heatmapCache) {
+        const [x, z] = this.worldToScreen(tile.worldX, tile.worldZ);
+        ctx.fillStyle = `rgba(255,70,60,${0.12 + intensity * 0.55})`;
+        ctx.fillRect(x - size / 2, z - size / 2, size, size);
+      }
+    } else if (this.heatmapMode === 'crowding') {
+      for (const { route, avgLoad } of this._heatmapCache) {
+        const seq = route.sequenceStationIds || route.stationIds;
+        const color = avgLoad > 0.8 ? '255,70,60' : avgLoad > 0.5 ? '255,209,102' : '110,231,201';
+        ctx.strokeStyle = `rgba(${color},0.4)`;
+        ctx.lineWidth = Math.max(6, 12 * this.scale / 2.4);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        seq.forEach((sid, i) => {
+          const s = this.network.stations.get(sid);
+          if (!s) return;
+          const [x, z] = this.worldToScreen(s.worldX, s.worldZ);
+          if (i === 0) ctx.moveTo(x, z); else ctx.lineTo(x, z);
+        });
+        ctx.stroke();
+      }
+    }
+  }
 
   _resize() {
     const w = window.innerWidth, h = window.innerHeight;
@@ -96,6 +169,9 @@ export class SchematicView {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.drawImage(this._staticCanvas, 0, 0);
+
+    this._refreshHeatmapCache();
+    this._drawHeatmap(ctx);
 
     // route lines: straight segments through stations in route order
     for (const route of this.network.routes.values()) {

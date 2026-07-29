@@ -147,7 +147,6 @@ export class PassengerSystem {
     this._spawnAccum = new Map();
     this.satisfactionSamples = [];
     this.citySatisfaction = 78;
-    this.congestion = 0; // rolling car-fallback pressure, 0-100
     this._group = null;
     this._maxWaitingInstances = 700;
 
@@ -175,7 +174,7 @@ export class PassengerSystem {
     if (!plan) {
       // no transit path at all: 50/50 lost demand vs. car
       if (Math.random() < 0.5) this.economy.recordLostDemand();
-      else { this.economy.recordCarTrip(); this.congestion = Math.min(100, this.congestion + 0.15); }
+      else { this.economy.recordCarTrip(); this.economy.congestion = Math.min(100, this.economy.congestion + 0.15); }
       return;
     }
     if (plan.rideLegs.length === 0) {
@@ -186,7 +185,7 @@ export class PassengerSystem {
     if (plan.totalMinutes > MAX_ACCEPTABLE_TRIP_MINUTES * 0.92) {
       if (Math.random() < 0.5) { this.economy.recordLostDemand(); return; }
       this.economy.recordCarTrip();
-      this.congestion = Math.min(100, this.congestion + 0.1);
+      this.economy.congestion = Math.min(100, this.economy.congestion + 0.1);
       return;
     }
 
@@ -309,7 +308,9 @@ export class PassengerSystem {
 
   update(simMinutes, hour) {
     this._now = (this._now || 0) + simMinutes;
-    this.congestion = Math.max(0, this.congestion - simMinutes * 0.02);
+    // congestion decays faster when the network is actually serving people well
+    const decayRate = 0.01 + (this.citySatisfaction / 100) * 0.03;
+    this.economy.congestion = Math.max(0, this.economy.congestion - simMinutes * decayRate);
 
     this._spawnPassengers(simMinutes, hour);
 
@@ -344,7 +345,8 @@ export class PassengerSystem {
     for (const tile of residential) {
       const pop = this.city.effectivePopulation(tile);
       if (pop < 1) continue;
-      this._accumulateSpawns(tile, pop * BASE_SPAWN_RATE * forwardMult * simMinutes, () => {
+      const spike = this._spikeMultiplierFor(tile);
+      this._accumulateSpawns(tile, pop * BASE_SPAWN_RATE * forwardMult * spike * simMinutes, () => {
         const dest = pickWeighted(Math.random, jobsZones, (t) => {
           const jobs = this.city.effectiveJobs(t);
           const d = Math.hypot(t.worldX - tile.worldX, t.worldZ - tile.worldZ);
@@ -357,7 +359,8 @@ export class PassengerSystem {
     for (const tile of jobsZones) {
       const jobs = this.city.effectiveJobs(tile);
       if (jobs < 1) continue;
-      this._accumulateSpawns(tile, jobs * BASE_SPAWN_RATE * reverseMult * simMinutes, () => {
+      const spike = this._spikeMultiplierFor(tile);
+      this._accumulateSpawns(tile, jobs * BASE_SPAWN_RATE * reverseMult * spike * simMinutes, () => {
         const dest = pickWeighted(Math.random, residential, (t) => {
           const pop = this.city.effectivePopulation(t);
           const d = Math.hypot(t.worldX - tile.worldX, t.worldZ - tile.worldZ);
@@ -366,6 +369,19 @@ export class PassengerSystem {
         if (dest) this.spawnPassenger(tile, dest, hour);
       });
     }
+  }
+
+  // A "stadium event" style demand spike temporarily boosts spawn rates for
+  // zones near one station - see events.js.
+  _spikeMultiplierFor(tile) {
+    let mult = 1;
+    for (const spike of this.network.demandSpikes) {
+      const station = this.network.stations.get(spike.stationId);
+      if (!station) continue;
+      const d = Math.hypot(tile.worldX - station.worldX, tile.worldZ - station.worldZ);
+      if (d <= station.radius * 1.5) mult = Math.max(mult, spike.multiplier);
+    }
+    return mult;
   }
 
   _accumulateSpawns(tile, expected, spawnFn) {

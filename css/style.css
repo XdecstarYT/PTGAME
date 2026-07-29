@@ -89,7 +89,7 @@ html, body {
 .stat.warn span { color: var(--warn); }
 .stat.danger span { color: var(--danger); }
 
-.speed-btn, #btn-view-toggle, #btn-finance, #btn-routes, #btn-design-vehicle {
+.speed-btn, #btn-view-toggle, #btn-finance, #btn-routes, #btn-design-vehicle, #btn-disruptions, #btn-contracts, #btn-audio-toggle, #btn-heatmap-toggle, #btn-save-load {
   background: var(--bg-panel-light);
   border: 1px solid var(--border);
   color: var(--text);
@@ -99,12 +99,12 @@ html, body {
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.speed-btn:hover, #btn-view-toggle:hover, #btn-finance:hover, #btn-routes:hover, #btn-design-vehicle:hover { background: rgba(255,255,255,0.14); }
+.speed-btn:hover, #btn-view-toggle:hover, #btn-finance:hover, #btn-routes:hover, #btn-design-vehicle:hover, #btn-disruptions:hover, #btn-contracts:hover, #btn-audio-toggle:hover, #btn-heatmap-toggle:hover, #btn-save-load:hover { background: rgba(255,255,255,0.14); }
 .speed-btn.active { background: var(--accent); color: #201a10; font-weight: 700; }
 
 /* ---------------- Left toolbar ---------------- */
 #toolbar {
-  top: 68px;
+  top: 94px;
   left: 12px;
   display: flex;
   flex-direction: column;
@@ -135,7 +135,7 @@ html, body {
 
 /* ---------------- Right side panel ---------------- */
 #sidepanel {
-  top: 68px;
+  top: 94px;
   right: 12px;
   width: 300px;
   max-height: calc(100vh - 100px);
@@ -171,6 +171,30 @@ html, body {
 #panel-content h4 { margin: 10px 0 4px; color: var(--text); font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; }
 #panel-content .row { display: flex; justify-content: space-between; padding: 3px 0; }
 #panel-content .row b { color: var(--text); }
+#panel-content .row.violation { color: var(--danger); font-size: 12px; }
+
+/* ---------------- News ticker ---------------- */
+#news-ticker {
+  top: 52px;
+  left: 0;
+  right: 0;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px;
+  background: rgba(20, 18, 26, 0.55);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+}
+#news-ticker-text.ticker-fade { animation: tickerFade 0.5s ease; }
+@keyframes tickerFade {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 #panel-content .field { margin: 6px 0; }
 #panel-content label { display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 2px; }
 #panel-content select, #panel-content input[type=number], #panel-content input[type=range], #panel-content input[type=text] {
@@ -260,6 +284,22 @@ html, body {
 #modal-content table { width: 100%; border-collapse: collapse; font-size: 12px; }
 #modal-content th, #modal-content td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--border); }
 #modal-content th { color: var(--text); }
+#modal-content button.action, #start-menu-box button.action, #start-menu-box label.action {
+  background: var(--accent);
+  color: #201a10;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  margin: 2px 4px 2px 0;
+  display: inline-block;
+}
+#modal-content button.action.secondary, #start-menu-box button.action.secondary, #start-menu-box label.action.secondary {
+  background: var(--bg-panel-light); color: var(--text); border: 1px solid var(--border);
+}
+#modal-content button.action.danger, #start-menu-box button.action.danger { background: var(--danger); color: #2a0d0d; }
 
 /* ---------------- Toasts ---------------- */
 #toast-container {
@@ -488,3 +528,49 @@ html, body {
 .compare-table th:first-child, .compare-table td:first-child { text-align: left; color: var(--text); }
 .compare-thumb { width: 100px; border-radius: 6px; }
 .compare-best { color: var(--good); font-weight: 700; }
+
+/* ==================== Disruptions / news ticker / heatmap toggle ==================== */
+
+.badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 16px; padding: 0 4px; margin-left: 5px;
+  background: var(--danger); color: #2a0d0d; border-radius: 8px;
+  font-size: 10px; font-weight: 700;
+}
+.badge.hidden { display: none; }
+
+#modal-content .disruption-item {
+  padding: 8px 10px; border-radius: 8px; background: rgba(255,255,255,0.04);
+  margin-bottom: 6px; font-size: 12px; display: flex; justify-content: space-between; gap: 10px; align-items: center;
+}
+#modal-content .disruption-item .days-left { color: var(--warn); white-space: nowrap; font-weight: 700; }
+
+/* ==================== Start menu ==================== */
+#start-menu {
+  position: absolute; inset: 0; z-index: 200;
+  background: radial-gradient(circle at 30% 20%, #2a2536, #100e16 70%);
+  display: flex; align-items: center; justify-content: center;
+  overflow-y: auto;
+}
+#start-menu.hidden { display: none; }
+#start-menu-box {
+  width: min(760px, 92vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 28px 32px;
+}
+#start-menu-box h1 { color: var(--accent); font-size: 26px; margin: 0 0 18px; }
+#start-menu-box h4 { color: var(--text); font-size: 13px; text-transform: uppercase; letter-spacing: 0.6px; margin: 18px 0 10px; }
+#start-continue-section .continue-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 14px; margin-bottom: 8px; font-size: 13px; color: var(--text-dim);
+}
+#start-scenario-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.scenario-card {
+  background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px; display: flex; flex-direction: column; gap: 8px;
+}
+.scenario-card h5 { margin: 0; color: var(--text); font-size: 14px; }
+.scenario-card p { margin: 0; font-size: 12px; color: var(--text-dim); flex: 1; }
+.scenario-card .scenario-actions { display: flex; gap: 6px; flex-wrap: wrap; }

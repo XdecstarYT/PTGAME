@@ -91,3 +91,6 @@ export const ROUTE_PALETTE = [
 
 export const MAX_ACCEPTABLE_TRIP_MINUTES = 75;
 export const MAX_TRANSFERS = 3;
+
+export const SUBSIDY_PER_RIDER = 0.5; // flat government top-up per completed trip, on top of fare
+export const COMBUSTION_POWERTRAINS = ['diesel', 'hybrid', 'hydrogen']; // affected by fuel price shocks

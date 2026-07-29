@@ -1,4 +1,7 @@
-import { STARTING_BUDGET, BASE_FARE, STATION_MAINTENANCE_PER_DAY, DEFAULT_REGULATION_ID } from './config.js';
+import {
+  STARTING_BUDGET, BASE_FARE, STATION_MAINTENANCE_PER_DAY, DEFAULT_REGULATION_ID,
+  SUBSIDY_PER_RIDER, COMBUSTION_POWERTRAINS,
+} from './config.js';
 
 // Budget, fares, operating costs and the finance dashboard's data feed.
 // Kept independent of rendering/network so it's easy to reason about.
@@ -9,6 +12,12 @@ export class Economy {
     this.debt = 0;
     this.fare = BASE_FARE;
     this.activeRegulationId = DEFAULT_REGULATION_ID;
+    this.congestion = 0; // citywide road congestion, 0-100 - see passengers.js/network.js
+
+    // temporary multipliers events.js flips during disruptions/economic shocks
+    this.weatherSpeedMultiplier = 1;  // surface (non-subway) speed during storms
+    this.fuelPriceMultiplier = 1;     // running cost for combustion powertrains
+    this.subsidyMultiplier = 1;       // government top-up per rider
 
     this.dailyIncome = 0;
     this.dailyExpense = 0;
@@ -50,7 +59,7 @@ export class Economy {
   // Called once per *completed trip* (not per leg). Revenue is split evenly
   // across every route the passenger actually rode.
   earnFare(routeIds) {
-    const amount = this.fare;
+    const amount = this.fare + SUBSIDY_PER_RIDER * this.subsidyMultiplier;
     this.budget += amount;
     this.dailyIncome += amount;
     this.totalRevenue += amount;
@@ -96,8 +105,20 @@ export class Economy {
   applyDailyCosts(network) {
     for (const route of network.routes.values()) {
       if (!route.committed || !route.vehicleStats) continue;
-      const cost = route.vehicleStats.runningCostPerDay * route.frequency;
+      let cost = route.vehicleStats.runningCostPerDay * route.frequency;
+      const model = network.catalog?.get(route.modelId);
+      if (model && COMBUSTION_POWERTRAINS.includes(model.powertrainId)) cost *= this.fuelPriceMultiplier;
       this.spend(cost, route.id);
+
+      if (route.vehicleStats.adRevenuePerDay) {
+        const adIncome = route.vehicleStats.adRevenuePerDay * route.frequency;
+        this.budget += adIncome;
+        this.dailyIncome += adIncome;
+        this.totalRevenue += adIncome;
+        const r = this._routeEntry(route.id);
+        r.revenueToday += adIncome;
+        r.revenueTotal += adIncome;
+      }
     }
     const stationCost = network.stations.size * STATION_MAINTENANCE_PER_DAY;
     if (stationCost > 0) this.spend(stationCost);
@@ -114,6 +135,14 @@ export class Economy {
     const r = this.routeStats.get(routeId);
     if (!r) return 0;
     return r.revenueToday - r.costToday;
+  }
+
+  // Feedback loop: congested roads slow surface transit down, which pushes
+  // more riders into cars, which raises congestion further. Subway ignores
+  // this entirely (grade-separated).
+  congestionSpeedMultiplier(category) {
+    if (category === 'subway') return 1;
+    return 1 - (this.congestion / 100) * 0.5;
   }
 
   closeDay(day, satisfaction, coverage) {
@@ -136,5 +165,27 @@ export class Economy {
     this.dailyRidership = 0;
     this.lostDemandToday = 0;
     this.carTripsToday = 0;
+  }
+
+  // ---------------- save/load ----------------
+
+  serialize() {
+    return {
+      budget: this.budget, debt: this.debt, fare: this.fare,
+      activeRegulationId: this.activeRegulationId, congestion: this.congestion,
+      weatherSpeedMultiplier: this.weatherSpeedMultiplier,
+      fuelPriceMultiplier: this.fuelPriceMultiplier, subsidyMultiplier: this.subsidyMultiplier,
+      dailyIncome: this.dailyIncome, dailyExpense: this.dailyExpense, dailyRidership: this.dailyRidership,
+      lostDemandToday: this.lostDemandToday, carTripsToday: this.carTripsToday,
+      totalRevenue: this.totalRevenue, totalExpense: this.totalExpense, totalRidership: this.totalRidership,
+      routeStats: [...this.routeStats.entries()],
+      history: this.history,
+    };
+  }
+
+  restore(data) {
+    Object.assign(this, data);
+    this.routeStats = new Map(data.routeStats || []);
+    this.history = data.history || [];
   }
 }

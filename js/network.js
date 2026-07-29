@@ -8,6 +8,7 @@ import { chassisById } from './designer/chassisDefs.js';
 
 let _idCounter = 1;
 function nextId(prefix) { return `${prefix}${_idCounter++}`; }
+export function bumpIdCounter(n) { _idCounter = Math.max(_idCounter, n); }
 
 function makeLabelSprite(text, color = '#ffffff') {
   const canvas = document.createElement('canvas');
@@ -61,8 +62,9 @@ class RoadGraph {
     }
   }
 
-  // BFS shortest path between two road tiles -> array of {x,z}
-  shortestPath(from, to) {
+  // BFS shortest path between two road tiles -> array of {x,z}. `closed` is
+  // an optional Set of "x_z" keys (e.g. a flooded bridge) to route around.
+  shortestPath(from, to, closed = null) {
     const start = this._key(from.x, from.z), goal = this._key(to.x, to.z);
     if (!this.nodes.has(start) || !this.nodes.has(goal)) return null;
     if (start === goal) return [this.nodes.get(start)];
@@ -74,7 +76,7 @@ class RoadGraph {
       const cur = queue[head++];
       if (cur === goal) break;
       for (const nb of this.adj.get(cur)) {
-        if (!visited.has(nb)) {
+        if (!visited.has(nb) && !(closed && closed.has(nb) && nb !== goal && nb !== start)) {
           visited.add(nb);
           prev.set(nb, cur);
           queue.push(nb);
@@ -101,6 +103,8 @@ export class Network {
     this.stations = new Map();
     this.routes = new Map();
     this.trackedTiles = new Set(); // tram track already paid for, keyed "x_z"
+    this.closedRoadTiles = new Set(); // temporarily flooded/closed bridge tiles, keyed "x_z"
+    this.demandSpikes = []; // [{stationId, multiplier, expiresAtDay}] - see events.js
     this._paletteIndex = 0;
     this._group = null;
   }
@@ -135,6 +139,54 @@ export class Network {
     };
     this.stations.set(id, station);
     return station;
+  }
+
+  // ---------------- save/load ----------------
+
+  resetAll() {
+    this.stations.clear();
+    this.routes.clear();
+    this.trackedTiles.clear();
+    this.closedRoadTiles.clear();
+    this.demandSpikes.length = 0;
+  }
+
+  // Rebuilds a previously-paid-for station from save data - no cost, no checks.
+  restoreStation(data) {
+    const pos = this.city.tileCenterWorld(data.x, data.z);
+    const station = {
+      id: data.id, name: data.name, x: data.x, z: data.z, worldX: pos.x, worldZ: pos.z,
+      roadTile: data.roadTile,
+      radius: STATION_CATCHMENT_RADIUS,
+      routeIds: new Set(),
+      waitingPassengers: [],
+      stats: { boarded: 0, alighted: 0 },
+    };
+    this.stations.set(station.id, station);
+    return station;
+  }
+
+  // Rebuilds a previously-paid-for route from save data - no cost, no checks.
+  // Call after restoreStation() and after trackedTiles/closedRoadTiles are
+  // already populated so recomputeRoutePath doesn't think existing track is new.
+  restoreRoute(data, activeRegulationId) {
+    const route = {
+      id: data.id, name: data.name, type: data.type, color: data.color,
+      stationIds: [...data.stationIds], loop: data.loop, frequency: data.frequency,
+      vehicleIds: [], path: [], legDistances: [], cumDistances: [], length: 0,
+      committed: data.committed, modelId: data.modelId, vehicleStats: null,
+      strikeActive: !!data.strikeActive,
+    };
+    this.routes.set(route.id, route);
+    for (const sid of route.stationIds) {
+      const s = this.stations.get(sid);
+      if (s) s.routeIds.add(route.id);
+    }
+    const model = route.modelId ? this.catalog?.get(route.modelId) : null;
+    if (model) route.vehicleStats = computeStats(model, { activeRegulationId });
+    this.recomputeRoutePath(route);
+    this.commitTrackConstruction(route); // tiles are already in trackedTiles if genuinely pre-existing; harmless no-op otherwise
+    return route;
   }
 
   removeStation(id) {
@@ -272,7 +324,7 @@ export class Network {
         legPoints = [new THREE.Vector3(a.worldX, 0, a.worldZ), new THREE.Vector3(b.worldX, 0, b.worldZ)];
         tunnelDistance += legPoints[0].distanceTo(legPoints[1]);
       } else {
-        const roadPath = this.roadGraph.shortestPath(a.roadTile, b.roadTile);
+        const roadPath = this.roadGraph.shortestPath(a.roadTile, b.roadTile, this.closedRoadTiles);
         legPoints.push(new THREE.Vector3(a.worldX, 0, a.worldZ));
         if (roadPath) {
           for (const node of roadPath) {
@@ -326,6 +378,14 @@ export class Network {
 
   commitTrackConstruction(route) {
     for (const key of route.pendingNewTrackTiles || []) this.trackedTiles.add(key);
+  }
+
+  // Called by events.js when a bridge/tunnel closes or reopens so surface
+  // (bus/tram) routes reroute around (or back onto) the affected tile.
+  recomputeAllCommittedRoutePaths() {
+    for (const route of this.routes.values()) {
+      if (route.committed && route.type !== 'subway') this.recomputeRoutePath(route);
+    }
   }
 
   // Interpolate a world-space point at `dist` along the route's driving path.

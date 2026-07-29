@@ -25,6 +25,9 @@ export class UIController {
     this.catalog = catalog;
     this.schematicView = null; // set later via setSchematicView
     this.vehicleDesigner = null; // set later via setVehicleDesigner
+    this.eventSystem = null; // set later via setEventSystem
+    this.contractSystem = null; // set later via setContractSystem
+    this.staffing = null; // set later via setStaffing
 
     this.tool = 'select';
     this.draftRoute = null;
@@ -43,12 +46,16 @@ export class UIController {
 
   setSchematicView(view) { this.schematicView = view; }
   setVehicleDesigner(vd) { this.vehicleDesigner = vd; }
+  setEventSystem(es) { this.eventSystem = es; }
+  setContractSystem(cs) { this.contractSystem = cs; }
+  setStaffing(s) { this.staffing = s; }
 
   _cacheDom() {
     this.dom = {
       budget: document.querySelector('#stat-budget span'),
       satisfaction: document.querySelector('#stat-satisfaction'),
       ridership: document.querySelector('#stat-ridership span'),
+      congestion: document.querySelector('#stat-congestion'),
       date: document.querySelector('#stat-date span'),
       speedBtns: [...document.querySelectorAll('.speed-btn')],
       toolBtns: [...document.querySelectorAll('.tool-btn')],
@@ -59,6 +66,10 @@ export class UIController {
       routeChipStrip: document.getElementById('route-chip-strip'),
       btnFinance: document.getElementById('btn-finance'),
       btnRoutes: document.getElementById('btn-routes'),
+      btnDisruptions: document.getElementById('btn-disruptions'),
+      disruptionBadge: document.getElementById('disruption-badge'),
+      btnContracts: document.getElementById('btn-contracts'),
+      contractBadge: document.getElementById('contract-badge'),
       btnViewToggle: document.getElementById('btn-view-toggle'),
       modalLayer: document.getElementById('modal-layer'),
       modalTitle: document.getElementById('modal-title'),
@@ -108,7 +119,14 @@ export class UIController {
     satEl.classList.toggle('danger', sat < 35);
 
     this.dom.ridership.textContent = this.economy.dailyRidership.toLocaleString('en-US');
+
+    const congestion = Math.round(this.economy.congestion);
+    this.dom.congestion.querySelector('span').textContent = `${congestion}%`;
+    this.dom.congestion.classList.toggle('warn', congestion >= 40 && congestion < 70);
+    this.dom.congestion.classList.toggle('danger', congestion >= 70);
+
     this.dom.date.textContent = this.timeSystem.formatDate();
+    this.refreshDisruptionBadge();
   }
 
   // ---------------- toolbar ----------------
@@ -144,6 +162,57 @@ export class UIController {
   _wireBottombar() {
     this.dom.btnFinance.addEventListener('click', () => this.openFinanceModal());
     this.dom.btnRoutes.addEventListener('click', () => this.openRoutesModal());
+    this.dom.btnDisruptions.addEventListener('click', () => this.openDisruptionsModal());
+    this.dom.btnContracts.addEventListener('click', () => this.openContractsModal());
+  }
+
+  refreshDisruptionBadge() {
+    const n = this.eventSystem?.active.length || 0;
+    this.dom.disruptionBadge.textContent = String(n);
+    this.dom.disruptionBadge.classList.toggle('hidden', n === 0);
+    const c = this.contractSystem?.active.length || 0;
+    this.dom.contractBadge.textContent = String(c);
+    this.dom.contractBadge.classList.toggle('hidden', c === 0);
+  }
+
+  openContractsModal() {
+    const contracts = this.contractSystem?.active || [];
+    const day = this.timeSystem.day;
+    const rows = contracts.map(c => {
+      const daysLeft = Math.max(0, c.expiresAtDay - day);
+      return `<div class="disruption-item"><span>${c.label}<br><span style="font-size:11px">Reward ${fmtMoney(c.reward)} · Penalty ${fmtMoney(c.penalty)}</span></span><span class="days-left">${daysLeft}d left</span></div>`;
+    }).join('') || '<p>No active contracts right now - check back after a day passes.</p>';
+    const completed = this.contractSystem?.completedCount || 0;
+    this.openModal('Council Contracts', `${rows}<p style="margin-top:10px;font-size:11px">Completed all-time: ${completed}</p>`);
+  }
+
+  openDisruptionsModal() {
+    const events = this.eventSystem?.active || [];
+    const day = this.timeSystem.day;
+    const rows = events.map(ev => {
+      const daysLeft = Math.max(0, ev.expiresAtDay - day);
+      let action = '';
+      if (ev.type === 'breakdown') {
+        action = `<button class="action secondary" data-rush="${ev.vehicleId}">Rush Repair (${fmtMoney(this.eventSystem.rushRepairCost)})</button>`;
+      } else if (ev.type === 'strike') {
+        action = `<button class="action secondary" data-settle="${ev.routeId}">Settle (${fmtMoney(this.eventSystem.settleStrikeCost)})</button>`;
+      }
+      return `<div class="disruption-item"><span>${ev.label}</span><span class="days-left">${daysLeft}d left</span>${action}</div>`;
+    }).join('') || '<p>No active disruptions right now.</p>';
+
+    this.openModal('Active Disruptions', rows);
+    this.dom.modalContent.querySelectorAll('[data-rush]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (this.eventSystem.rushRepair(btn.dataset.rush)) { this.openDisruptionsModal(); this.refreshDisruptionBadge(); }
+        else this.showToast('Not enough budget for a rush repair.');
+      });
+    });
+    this.dom.modalContent.querySelectorAll('[data-settle]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (this.eventSystem.settleStrike(btn.dataset.settle)) { this.openDisruptionsModal(); this.refreshDisruptionBadge(); }
+        else this.showToast('Not enough budget to settle the strike.');
+      });
+    });
   }
 
   refreshRouteChips() {
@@ -456,11 +525,14 @@ export class UIController {
         <div class="stationlist-item" style="flex-direction:column;align-items:stretch;gap:3px">
           <div class="row"><span>${(v.mileageKm).toFixed(0)} km · ${v.ageSimDays.toFixed(0)}d old</span><b>${wearPct}% worn</b></div>
           <div class="bar-track"><div class="bar-fill" style="width:${100 - wearPct}%;background:${wearPct > 60 ? '#ff6b6b' : wearPct > 30 ? '#ffd166' : '#6ee7c9'}"></div></div>
-          ${wearPct > 5 ? `<button class="action secondary" data-refurbish="${vid}">Refurbish (${fmtMoney(refurbCost)})</button>` : ''}
+          ${v.brokenDown ? `<button class="action danger" data-rush="${vid}">🔧 Broken down - Rush Repair (${fmtMoney(this.eventSystem?.rushRepairCost || 0)})</button>` : ''}
+          ${!v.brokenDown && wearPct > 5 ? `<button class="action secondary" data-refurbish="${vid}">Refurbish (${fmtMoney(refurbCost)})</button>` : ''}
         </div>`;
     }).join('') || '<div class="row"><span>No vehicles yet</span></div>';
 
     return `
+      ${route.strikeActive ? `<div class="row violation" style="margin-bottom:6px">⚠️ Driver strike - service suspended
+        <button class="action secondary" data-settle-strike style="margin-left:8px">Settle (${fmtMoney(this.eventSystem?.settleStrikeCost || 0)})</button></div>` : ''}
       <div class="row"><span>Vehicle</span><b>${model ? model.name : 'Unassigned'}${route.loop ? ' (loop)' : ''}</b></div>
       <div class="row"><span>Stops</span><b>${route.stationIds.length}</b></div>
       <div class="row"><span>Riders today</span><b>${rstats?.ridersToday || 0}</b></div>
@@ -510,6 +582,16 @@ export class UIController {
         this.vehicleSystem.refurbish(vid);
         this.openPanel(route.name, this._renderRoutePanel(route));
       });
+    });
+    panel.querySelectorAll('[data-rush]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (this.eventSystem.rushRepair(btn.dataset.rush)) { this.openPanel(route.name, this._renderRoutePanel(route)); this.refreshDisruptionBadge(); }
+        else this.showToast('Not enough budget for a rush repair.');
+      });
+    });
+    panel.querySelector('[data-settle-strike]')?.addEventListener('click', () => {
+      if (this.eventSystem.settleStrike(route.id)) { this.openPanel(route.name, this._renderRoutePanel(route)); this.refreshDisruptionBadge(); }
+      else this.showToast('Not enough budget to settle the strike.');
     });
     panel.querySelector('#route-delete')?.addEventListener('click', () => {
       this.vehicleSystem.removeRouteVehicles(route.id);
@@ -585,6 +667,16 @@ export class UIController {
       </div>
       <h4>City vehicle regulation</h4>
       <div>${regButtons}</div>
+      <h4>Workforce</h4>
+      <div class="row"><span>Drivers</span><b>${this.staffing.drivers} / ${this.staffing.requiredDrivers(this.network)} needed</b></div>
+      <div class="row"><span>Mechanics</span><b>${this.staffing.mechanics} / ${this.staffing.requiredMechanics(this.network)} needed</b></div>
+      <div class="row"><span>Morale</span><b>${Math.round(this.staffing.morale)}%</b></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${this.staffing.morale}%;background:${this.staffing.morale < 40 ? '#ff6b6b' : this.staffing.morale < 70 ? '#ffd166' : '#6ee7c9'}"></div></div>
+      <div style="margin:6px 0">
+        <button class="action secondary" id="hire-driver-btn">Hire Driver (${fmtMoney(this.staffing.hireDriverCost)})</button>
+        <button class="action secondary" id="hire-mechanic-btn">Hire Mechanic (${fmtMoney(this.staffing.hireMechanicCost)})</button>
+        <button class="action secondary" id="train-btn">Train Staff (${fmtMoney(this.staffing.trainCost)})</button>
+      </div>
       <h4>Recent days</h4>
       <table><thead><tr><th>Day</th><th>Income</th><th>Expense</th><th>Profit</th><th>Riders</th><th>Sat.</th></tr></thead>
       <tbody>${rows}</tbody></table>
@@ -594,7 +686,11 @@ export class UIController {
       <h4>Network stats</h4>
       <div class="row"><span>Coverage</span><b>${Math.round(this.network.coveragePercent() * 100)}%</b></div>
       <div class="row"><span>Lost demand today</span><b>${this.economy.lostDemandToday}</b></div>
-      <div class="row"><span>Car trips today (congestion)</span><b>${this.economy.carTripsToday}</b></div>
+      <div class="row"><span>Car trips today</span><b>${this.economy.carTripsToday}</b></div>
+      <div class="row"><span>Road congestion</span><b>${Math.round(this.economy.congestion)}%</b></div>
+      ${this.economy.fuelPriceMultiplier !== 1 ? `<div class="row violation">⚠️ Fuel price shock: running costs ×${this.economy.fuelPriceMultiplier.toFixed(2)} for combustion vehicles</div>` : ''}
+      ${this.economy.subsidyMultiplier !== 1 ? `<div class="row violation">⚠️ Subsidy cut: per-rider government top-up reduced</div>` : ''}
+      ${this.economy.weatherSpeedMultiplier !== 1 ? `<div class="row violation">⚠️ Storm: surface routes running slower</div>` : ''}
     `;
     this.openModal('Finance Dashboard', html);
     document.getElementById('fare-slider')?.addEventListener('input', (e) => { this.economy.fare = Number(e.target.value); });
@@ -609,6 +705,18 @@ export class UIController {
         this.network.resyncAllVehicleStats(this.economy.activeRegulationId);
         this.openFinanceModal();
       });
+    });
+    document.getElementById('hire-driver-btn')?.addEventListener('click', () => {
+      if (this.staffing.hireDriver()) this.openFinanceModal();
+      else this.showToast('Not enough budget to hire a driver.');
+    });
+    document.getElementById('hire-mechanic-btn')?.addEventListener('click', () => {
+      if (this.staffing.hireMechanic()) this.openFinanceModal();
+      else this.showToast('Not enough budget to hire a mechanic.');
+    });
+    document.getElementById('train-btn')?.addEventListener('click', () => {
+      if (this.staffing.train()) this.openFinanceModal();
+      else this.showToast('Not enough budget to train staff.');
     });
   }
 

@@ -102,6 +102,9 @@ export function computeStats(model, opts = {}) {
   const reliabilityBase = Math.round(Math.max(10, Math.min(100, 92 + powertrain.reliabilityMod)));
   const emissionsScore = Math.round(powertrain.emissions * model.consistCars * 10) / 10;
 
+  // an ad wrap sells the exterior as ad space instead of just a paint job
+  const adRevenuePerDay = model.livery.pattern === 'adwrap' ? Math.round(capacityTotalPerCar * model.consistCars * 0.8) : 0;
+
   const ruleset = regulationById(opts.activeRegulationId);
   const compliance = checkCompliance(
     { doorCount, accessibleBays, aisleWidthCm: model.aisleWidthCm, stepHeightCm: model.stepHeightCm },
@@ -121,7 +124,7 @@ export function computeStats(model, opts = {}) {
     capacitySeatedPerCar, capacityStandingPerCar: Math.round(capacityStandingPerCar),
     capacityTotalPerCar, capacityTotal,
     doorCount, accessibleBays,
-    purchaseCost, runningCostPerDay, topSpeed,
+    purchaseCost, runningCostPerDay, topSpeed, adRevenuePerDay,
     comfortScore, boardingSpeedScore, reliabilityBase, emissionsScore,
     compliance, connected, ruleset,
     paybackDays, runningCostPerPassenger,

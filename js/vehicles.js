@@ -4,6 +4,7 @@ import { buildExteriorMesh, applyWear } from './designer/vehicleMeshBuilder.js';
 import { chassisById } from './designer/chassisDefs.js';
 
 let _vId = 1;
+export function bumpVehicleIdCounter(n) { _vId = Math.max(_vId, n); }
 const WEAR_MILEAGE_KM = 50000; // wearFactor reaches ~0.6 contribution around this odometer
 const WEAR_AGE_DAYS = 365;     // and ~0.4 contribution around one in-game year
 
@@ -19,9 +20,10 @@ function addCrowdingBar(group, carHeight) {
 }
 
 export class VehicleSystem {
-  constructor(network, catalog) {
+  constructor(network, catalog, economy) {
     this.network = network;
     this.catalog = catalog;
+    this.economy = economy;
     this.vehicles = new Map();
     this._listeners = { arrive: [] };
     this._group = null;
@@ -86,6 +88,36 @@ export class VehicleSystem {
     }
   }
 
+  // ---------------- save/load ----------------
+
+  resetAll() {
+    for (const id of [...this.vehicles.keys()]) this.removeVehicle(id);
+  }
+
+  restoreVehicle(data, route) {
+    const model = this.catalog?.get(data.modelId);
+    if (!model) return null;
+    const chassis = chassisById(data.chassisId);
+    const mesh = buildExteriorMesh(model, chassis);
+    addCrowdingBar(mesh, mesh.userData.carHeight);
+    this._group.add(mesh);
+    const vehicle = {
+      id: data.id, routeId: data.routeId, modelId: data.modelId, chassisId: data.chassisId,
+      capacity: route.vehicleStats?.capacityTotal || 1,
+      dist: data.dist, dir: data.dir, dwell: data.dwell,
+      passengers: [],
+      mileageKm: data.mileageKm, ageSimDays: data.ageSimDays, wearFactor: data.wearFactor,
+      brokenDown: !!data.brokenDown,
+      mesh,
+    };
+    applyWear(mesh, vehicle.wearFactor);
+    this.vehicles.set(vehicle.id, vehicle);
+    route.vehicleIds.push(vehicle.id);
+    const p = this.network.pointAtDistance(route, vehicle.dist);
+    mesh.position.set(p.x, p.y, p.z);
+    return vehicle;
+  }
+
   _repositionAll(route) {
     for (const id of route.vehicleIds) {
       const v = this.vehicles.get(id);
@@ -129,11 +161,13 @@ export class VehicleSystem {
     for (const vehicle of this.vehicles.values()) {
       const route = this.network.routes.get(vehicle.routeId);
       if (!route || route.path.length < 2 || route.cumDistances.length < 2 || !route.vehicleStats) continue;
+      if (vehicle.brokenDown || route.strikeActive) continue; // frozen in place until the disruption resolves
 
       if (vehicle.dwell > 0) {
         vehicle.dwell = Math.max(0, vehicle.dwell - simMinutes);
       } else {
-        const speed = route.vehicleStats.topSpeed;
+        const weatherMult = route.type === 'subway' ? 1 : this.economy.weatherSpeedMultiplier;
+        const speed = route.vehicleStats.topSpeed * this.economy.congestionSpeedMultiplier(route.type) * weatherMult;
         const prevDist = vehicle.dist;
         let newDist = prevDist + speed * simMinutes * vehicle.dir;
         this._accumulateWear(vehicle, simMinutes, speed * simMinutes);

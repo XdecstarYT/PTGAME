@@ -15,14 +15,21 @@ function mulberry32(seed) {
 // Population/jobs drive passenger demand; growthRadius gates which blocks are
 // "active" so the city can visibly expand over the course of a playthrough.
 
+const DEFAULT_SCENARIO = {
+  name: 'Sandbox',
+  riverAmplitudeMult: 1, riverWidthMult: 1, riverBaseXFrac: 0.66,
+  coreRadiusMult: 1, ringRadiusMult: 1,
+};
+
 export class City {
-  constructor(seed = Math.floor(Math.random() * 1e9)) {
+  constructor(seed = Math.floor(Math.random() * 1e9), scenarioConfig = {}) {
     this.seed = seed;
     this.rng = mulberry32(seed);
     this.size = GRID_SIZE;
     this.tiles = [];
     this.blocks = new Map(); // blockId -> block info
     this.growthRadius = 2.6; // in block-distance units, grows via milestones
+    this.scenario = { ...DEFAULT_SCENARIO, ...scenarioConfig };
     this._buildingsGroup = null;
 
     this._generateGrid();
@@ -35,9 +42,13 @@ export class City {
   }
 
   _riverX(worldZ) {
-    const amplitude = TILE_SIZE * 3;
+    const amplitude = TILE_SIZE * 3 * this.scenario.riverAmplitudeMult;
     const freq = (Math.PI * 2) / WORLD_SIZE * 1.4;
-    return WORLD_SIZE * 0.66 + Math.sin(worldZ * freq) * amplitude;
+    return WORLD_SIZE * this.scenario.riverBaseXFrac + Math.sin(worldZ * freq) * amplitude;
+  }
+
+  _riverHalfWidth() {
+    return TILE_SIZE * 1.05 * this.scenario.riverWidthMult;
   }
 
   _generateGrid() {
@@ -77,11 +88,12 @@ export class City {
 
         const wx = (x + 0.5) * TILE_SIZE;
         const wz = (z + 0.5) * TILE_SIZE;
-        const isWater = !isRoad && Math.abs(wx - this._riverX(wz)) < TILE_SIZE * 1.05;
+        const halfWidth = this._riverHalfWidth();
+        const isWater = !isRoad && Math.abs(wx - this._riverX(wz)) < halfWidth;
 
         let type;
         if (isWater) type = ZONE.WATER;
-        else if (isRoad) type = Math.abs(wx - this._riverX(wz)) < TILE_SIZE * 1.05 ? ZONE.BRIDGE : ZONE.ROAD;
+        else if (isRoad) type = Math.abs(wx - this._riverX(wz)) < halfWidth ? ZONE.BRIDGE : ZONE.ROAD;
         else if (!block.unlocked) type = ZONE.EMPTY;
         else type = this._pickTileType(block.dominantType);
 
@@ -105,15 +117,18 @@ export class City {
 
   _pickBlockType(dist) {
     const r = this.rng();
-    if (dist < 1.5) {
+    const core = 1.5 * this.scenario.coreRadiusMult;
+    const ring = 2.6 * this.scenario.ringRadiusMult;
+    const outer = 3.6 * this.scenario.ringRadiusMult;
+    if (dist < core) {
       if (r < 0.1) return ZONE.LANDMARK;
       if (r < 0.75) return ZONE.COMMERCIAL;
       return ZONE.RESIDENTIAL;
-    } else if (dist < 2.6) {
+    } else if (dist < ring) {
       if (r < 0.65) return ZONE.RESIDENTIAL;
       if (r < 0.9) return ZONE.COMMERCIAL;
       return ZONE.INDUSTRIAL;
-    } else if (dist < 3.6) {
+    } else if (dist < outer) {
       if (r < 0.4) return ZONE.RESIDENTIAL;
       if (r < 0.8) return ZONE.INDUSTRIAL;
       return ZONE.COMMERCIAL;
@@ -164,6 +179,50 @@ export class City {
   get percentUnlocked() {
     const all = [...this.blocks.values()];
     return all.filter(b => b.unlocked).length / all.length;
+  }
+
+  // Rebuilds the same deterministic layout from a saved seed, then re-applies
+  // which blocks had unlocked/matured so a loaded game looks like it did
+  // when it was saved.
+  regenerateFromSave(seed, growthRadius, blockStates, scenarioConfig) {
+    this.seed = seed;
+    this.rng = mulberry32(seed);
+    this.tiles = [];
+    this.blocks = new Map();
+    this.growthRadius = growthRadius;
+    if (scenarioConfig) this.scenario = { ...DEFAULT_SCENARIO, ...scenarioConfig };
+    this._generateGrid();
+    for (const state of blockStates || []) {
+      const block = this.blocks.get(state.id);
+      if (!block) continue;
+      block.unlocked = state.unlocked;
+      block.maturity = state.maturity;
+      if (block.unlocked) {
+        for (const tile of block.tiles) {
+          if (tile.type === ZONE.EMPTY) {
+            tile.type = this._pickTileType(block.dominantType);
+            if (tile.type === ZONE.RESIDENTIAL) tile.population = Math.round(24 + this.rng() * 46);
+            if (tile.type === ZONE.COMMERCIAL) tile.jobs = Math.round(20 + this.rng() * 55);
+            if (tile.type === ZONE.INDUSTRIAL) tile.jobs = Math.round(18 + this.rng() * 40);
+            if (tile.type === ZONE.LANDMARK) tile.jobs = Math.round(10 + this.rng() * 15);
+          }
+        }
+      }
+    }
+    this.rebuildMeshes();
+  }
+
+  // Starts a brand-new city from a hand-authored scenario preset (or the
+  // default sandbox config if scenarioConfig is empty).
+  regenerateWithScenario(seed, scenarioConfig = {}) {
+    this.seed = seed;
+    this.rng = mulberry32(seed);
+    this.scenario = { ...DEFAULT_SCENARIO, ...scenarioConfig };
+    this.tiles = [];
+    this.blocks = new Map();
+    this.growthRadius = 2.6;
+    this._generateGrid();
+    this.rebuildMeshes();
   }
 
   // grows maturity of recently-unlocked blocks toward 1 over a few sim-days
