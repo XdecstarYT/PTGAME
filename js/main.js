@@ -8,6 +8,8 @@ import { Economy } from './economy.js';
 import { TimeSystem } from './time.js';
 import { UIController } from './ui.js';
 import { SchematicView } from './schematicView.js';
+import { Catalog } from './designer/catalog.js';
+import { VehicleDesigner } from './designer/designerUI.js';
 
 const canvas = document.getElementById('viewport');
 const sceneManager = new SceneManager(canvas);
@@ -15,10 +17,12 @@ const sceneManager = new SceneManager(canvas);
 const city = new City();
 city.buildMeshes(sceneManager.scene);
 
-const network = new Network(city);
+const catalog = new Catalog();
+
+const network = new Network(city, catalog);
 network.buildMeshes(sceneManager.scene);
 
-const vehicleSystem = new VehicleSystem(network);
+const vehicleSystem = new VehicleSystem(network, catalog);
 vehicleSystem.buildMeshes(sceneManager.scene);
 
 const economy = new Economy();
@@ -27,7 +31,7 @@ passengerSystem.buildMeshes(sceneManager.scene);
 
 const timeSystem = new TimeSystem();
 
-const ui = new UIController({ sceneManager, city, network, vehicleSystem, passengerSystem, economy, timeSystem });
+const ui = new UIController({ sceneManager, city, network, vehicleSystem, passengerSystem, economy, timeSystem, catalog });
 
 const schematicView = new SchematicView({
   canvas: document.getElementById('schematic'),
@@ -35,6 +39,10 @@ const schematicView = new SchematicView({
   onTileClick: (x, z) => ui.handleWorldTileClick(x, z),
 });
 ui.setSchematicView(schematicView);
+
+const vehicleDesigner = new VehicleDesigner({ catalog, network, economy, ui });
+ui.setVehicleDesigner(vehicleDesigner);
+document.getElementById('btn-design-vehicle').addEventListener('click', () => vehicleDesigner.open());
 
 sceneManager.setTimeOfDay(timeSystem.hour);
 ui.refreshHud();
@@ -72,6 +80,15 @@ const milestones = [
     check: () => network.coveragePercent() >= 0.5,
     unlock: () => {},
     text: '🗺️ Milestone reached: Your network now covers over 50% of the city!',
+  },
+  {
+    id: 'fleet_compliant', done: false,
+    check: () => {
+      const committed = [...network.routes.values()].filter(r => r.committed && r.modelId);
+      return committed.length >= 2 && committed.every(r => r.vehicleStats?.compliance?.compliant);
+    },
+    unlock: () => {},
+    text: '📋 Milestone reached: Your entire fleet meets the active regulation!',
   },
 ];
 
@@ -155,6 +172,7 @@ function animate(now) {
   timeSystem.update(dt);
   sceneManager.render();
   if (schematicView.visible) schematicView.render();
+  if (vehicleDesigner.isOpen) vehicleDesigner.render(dt / 1000);
 
   hudAccum += dt;
   if (hudAccum > 400) {

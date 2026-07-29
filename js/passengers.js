@@ -169,7 +169,7 @@ export class PassengerSystem {
     const passenger = {
       id, originTile, destTile, spawnHour: hour,
       transfers: 0, totalWaitMinutes: 0, crowdingMisses: 0,
-      routesUsed: [],
+      routesUsed: [], comfortAccum: 0, reliabilityAccum: 0, ridesBoarded: 0,
     };
 
     if (!plan) {
@@ -271,6 +271,9 @@ export class PassengerSystem {
         vehicle.passengers.push(pid);
         if (!passenger.routesUsed.includes(route.id)) passenger.routesUsed.push(route.id);
         this.economy.recordBoarding(route.id);
+        passenger.comfortAccum += this.vehicleSystem.currentComfort(vehicle);
+        passenger.reliabilityAccum += this.vehicleSystem.currentReliability(vehicle);
+        passenger.ridesBoarded += 1;
       }
     }
 
@@ -291,6 +294,12 @@ export class PassengerSystem {
     score -= passenger.totalWaitMinutes * 1.6;
     score -= passenger.transfers * 8;
     score -= passenger.crowdingMisses * 6;
+    if (passenger.ridesBoarded > 0) {
+      const avgComfort = passenger.comfortAccum / passenger.ridesBoarded;
+      const avgReliability = passenger.reliabilityAccum / passenger.ridesBoarded;
+      score += (avgComfort - 70) * 0.3;
+      score += (avgReliability - 90) * 0.2;
+    }
     score = Math.max(0, Math.min(100, score));
     this.satisfactionSamples.push(score);
     if (this.satisfactionSamples.length > 400) this.satisfactionSamples.shift();

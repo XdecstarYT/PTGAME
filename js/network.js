@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import {
-  TILE_SIZE, STATION_COST, STATION_CATCHMENT_RADIUS, VEHICLE_TYPES,
-  ROUTE_PALETTE, ZONE,
+  TILE_SIZE, STATION_CATCHMENT_RADIUS, VEHICLE_TYPES,
+  ROUTE_PALETTE, FALLBACK_VEHICLE_SPEED,
 } from './config.js';
+import { computeStats } from './designer/vehicleModel.js';
+import { chassisById } from './designer/chassisDefs.js';
 
 let _idCounter = 1;
 function nextId(prefix) { return `${prefix}${_idCounter++}`; }
@@ -92,8 +94,9 @@ class RoadGraph {
 }
 
 export class Network {
-  constructor(city) {
+  constructor(city, catalog) {
     this.city = city;
+    this.catalog = catalog;
     this.roadGraph = new RoadGraph(city);
     this.stations = new Map();
     this.routes = new Map();
@@ -166,12 +169,47 @@ export class Network {
       legDistances: [], // distance for leg i -> i+1
       cumDistances: [], // cumulative distance at each station index
       length: 0,
-      newTrackTiles: [],
-      builtCost: 0,
-      revenueToday: 0, costToday: 0,
+      committed: false,
+      modelId: null,
+      vehicleStats: null, // resolved from the catalog model, see assignModelToRoute()
     };
     this.routes.set(id, route);
     return route;
+  }
+
+  // Attach a designed VehicleModel to a route: fixes its category (bus/tram/
+  // subway, which drives road-vs-tunnel pathing) and snapshots the model's
+  // derived stats so per-tick lookups (speed, dwell, cost) don't need to
+  // recompute them. Call resyncRoutesUsingModel() after editing a model that
+  // routes already reference.
+  assignModelToRoute(route, model, activeRegulationId) {
+    route.modelId = model.id;
+    route.type = chassisById(model.chassisId).category;
+    route.vehicleStats = computeStats(model, { activeRegulationId });
+    this.recomputeRoutePath(route);
+  }
+
+  // Regulation changes only affect the compliance flag, not speed/cost/
+  // capacity, so this skips the path/vehicle resync that resyncRoutesUsingModel does.
+  resyncAllVehicleStats(activeRegulationId) {
+    for (const route of this.routes.values()) {
+      const model = this.catalog?.get(route.modelId);
+      if (model) route.vehicleStats = computeStats(model, { activeRegulationId });
+    }
+  }
+
+  resyncRoutesUsingModel(modelId, activeRegulationId) {
+    const model = this.catalog?.get(modelId);
+    if (!model) return [];
+    const affected = [];
+    for (const route of this.routes.values()) {
+      if (route.modelId === modelId) {
+        route.vehicleStats = computeStats(model, { activeRegulationId });
+        this.recomputeRoutePath(route);
+        affected.push(route);
+      }
+    }
+    return affected;
   }
 
   removeRoute(id) {
@@ -305,14 +343,15 @@ export class Network {
     return new THREE.Vector3().lerpVectors(pts[lo], pts[hi], t);
   }
 
+  routeSpeed(route) { return route.vehicleStats?.topSpeed || FALLBACK_VEHICLE_SPEED; }
+
   // travel time in sim-minutes for the i-th leg (station index i -> i+1 within the route order)
   legMinutes(route, legIndex) {
-    const speed = VEHICLE_TYPES[route.type].speed;
-    return (route.legDistances[legIndex] || 0) / speed;
+    return (route.legDistances[legIndex] || 0) / this.routeSpeed(route);
   }
 
   routeRoundTripMinutes(route) {
-    const speed = VEHICLE_TYPES[route.type].speed;
+    const speed = this.routeSpeed(route);
     const dwell = 0.4 * route.stationIds.length * (route.loop ? 1 : 2);
     const travel = route.loop ? route.length / speed : (route.length * 2) / speed;
     return travel + dwell;
@@ -329,7 +368,7 @@ export class Network {
     const edges = [];
     for (const route of this.routes.values()) {
       const n = route.stationIds.length;
-      if (n < 2) continue;
+      if (n < 2 || !route.committed) continue;
       for (let i = 0; i < n - 1; i++) {
         const minutes = this.legMinutes(route, i);
         edges.push({ from: route.stationIds[i], to: route.stationIds[i + 1], routeId: route.id, minutes });

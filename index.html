@@ -43,6 +43,7 @@
         <button data-speed="4" class="speed-btn" title="4x">▶▶▶</button>
       </div>
       <div class="topbar-group view-toggle">
+        <button id="btn-design-vehicle" title="Vehicle Designer">🛠️ Design Vehicle</button>
         <button id="btn-view-toggle" title="Toggle schematic map">🗺️ Map</button>
       </div>
     </div>
@@ -88,6 +89,40 @@
 
     <!-- Route drawing helper banner -->
     <div id="tool-hint" class="hidden"></div>
+
+    <!-- Vehicle Designer overlay -->
+    <div id="designer-layer" class="hidden">
+      <div class="designer-header">
+        <span>🛠️ Vehicle Designer</span>
+        <div class="designer-header-actions">
+          <button id="designer-showroom-btn">🏷️ Showroom</button>
+          <button id="designer-new-btn">＋ New</button>
+          <button id="designer-save-btn" class="action">💾 Save</button>
+          <button id="designer-close">✕</button>
+        </div>
+      </div>
+      <div class="designer-body">
+        <div class="designer-side">
+          <div class="designer-tabs">
+            <button class="designer-tab active" data-tab="chassis">Chassis</button>
+            <button class="designer-tab" data-tab="interior">Interior</button>
+            <button class="designer-tab" data-tab="livery">Livery &amp; Consist</button>
+            <button class="designer-tab" data-tab="regs">Regulations &amp; ROI</button>
+          </div>
+          <div class="designer-tab-content" id="designer-tab-content"></div>
+        </div>
+        <div class="designer-preview">
+          <div class="designer-env-buttons">
+            <button data-env="daylight" class="active" title="Daylight">☀️</button>
+            <button data-env="overcast" title="Overcast">☁️</button>
+            <button data-env="night" title="Night">🌙</button>
+            <button data-env="rain" title="Rain">🌧️</button>
+          </div>
+          <canvas id="designer-viewport"></canvas>
+          <div class="designer-stats" id="designer-stats"></div>
+        </div>
+      </div>
+    </div>
 
   </div>
 

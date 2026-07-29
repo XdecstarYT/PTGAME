@@ -1,51 +1,27 @@
 import * as THREE from 'three';
-import { VEHICLE_TYPES } from './config.js';
+import { KM_PER_WORLD_UNIT } from './config.js';
+import { buildExteriorMesh, applyWear } from './designer/vehicleMeshBuilder.js';
+import { chassisById } from './designer/chassisDefs.js';
 
 let _vId = 1;
+const WEAR_MILEAGE_KM = 50000; // wearFactor reaches ~0.6 contribution around this odometer
+const WEAR_AGE_DAYS = 365;     // and ~0.4 contribution around one in-game year
 
-function buildVehicleMesh(type) {
-  const group = new THREE.Group();
-  const def = VEHICLE_TYPES[type];
-  const mat = new THREE.MeshStandardMaterial({ color: def.color, flatShading: true, roughness: 0.6, metalness: 0.1 });
-
-  let body;
-  if (type === 'bus') {
-    body = new THREE.Mesh(new THREE.BoxGeometry(3.6, 2, 1.8), mat);
-    body.position.y = 1.3;
-  } else if (type === 'tram') {
-    body = new THREE.Mesh(new THREE.BoxGeometry(5.2, 2.4, 2.1), mat);
-    body.position.y = 1.5;
-  } else {
-    body = new THREE.Mesh(new THREE.CapsuleGeometry(1.1, 4.4, 4, 8), mat);
-    body.rotation.z = Math.PI / 2;
-    body.position.y = 1.3;
-  }
-  body.castShadow = true;
-  group.add(body);
-
-  // crowding indicator: small bar above the vehicle
-  const barBg = new THREE.Mesh(
-    new THREE.BoxGeometry(2.2, 0.35, 0.1),
-    new THREE.MeshBasicMaterial({ color: 0x1a1a1a })
-  );
-  barBg.position.y = 3.1;
+function addCrowdingBar(group, carHeight) {
+  const y = carHeight + 1.2;
+  const barBg = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.35, 0.1), new THREE.MeshBasicMaterial({ color: 0x1a1a1a }));
+  barBg.position.y = y;
   group.add(barBg);
-
-  const barFill = new THREE.Mesh(
-    new THREE.BoxGeometry(2.2, 0.35, 0.12),
-    new THREE.MeshBasicMaterial({ color: 0x6ee7c9 })
-  );
-  barFill.position.y = 3.1;
-  barFill.position.z = 0.01;
+  const barFill = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.35, 0.12), new THREE.MeshBasicMaterial({ color: 0x6ee7c9 }));
+  barFill.position.set(0, y, 0.01);
   group.add(barFill);
   group.userData.barFill = barFill;
-
-  return group;
 }
 
 export class VehicleSystem {
-  constructor(network) {
+  constructor(network, catalog) {
     this.network = network;
+    this.catalog = catalog;
     this.vehicles = new Map();
     this._listeners = { arrive: [] };
     this._group = null;
@@ -62,21 +38,24 @@ export class VehicleSystem {
 
   // Ensure the route has exactly route.frequency vehicles, spaced along its path.
   syncRouteVehicles(route) {
-    const want = route.stationIds.length >= 2 ? route.frequency : 0;
+    const model = this.catalog?.get(route.modelId);
+    const want = (route.stationIds.length >= 2 && model) ? route.frequency : 0;
     const current = route.vehicleIds.filter(id => this.vehicles.has(id));
     route.vehicleIds = current;
 
     while (route.vehicleIds.length < want) {
       const id = `veh${_vId++}`;
       const spacing = route.length > 0 ? (route.length / want) * route.vehicleIds.length : 0;
-      const def = VEHICLE_TYPES[route.type];
-      const mesh = buildVehicleMesh(route.type);
+      const chassis = chassisById(model.chassisId);
+      const mesh = buildExteriorMesh(model, chassis);
+      addCrowdingBar(mesh, mesh.userData.carHeight);
       this._group.add(mesh);
       const vehicle = {
-        id, routeId: route.id, type: route.type,
-        capacity: def.capacity,
+        id, routeId: route.id, modelId: model.id, chassisId: model.chassisId,
+        capacity: route.vehicleStats.capacityTotal,
         dist: spacing, dir: 1, dwell: 0,
         passengers: [],
+        mileageKm: 0, ageSimDays: 0, wearFactor: 0,
         mesh,
       };
       this.vehicles.set(id, vehicle);
@@ -85,6 +64,11 @@ export class VehicleSystem {
     while (route.vehicleIds.length > want) {
       const id = route.vehicleIds.pop();
       this.removeVehicle(id);
+    }
+    // an already-existing route whose model was resynced needs its capacity refreshed
+    if (model) for (const id of route.vehicleIds) {
+      const v = this.vehicles.get(id);
+      if (v) v.capacity = route.vehicleStats.capacityTotal;
     }
     this._repositionAll(route);
   }
@@ -111,18 +95,48 @@ export class VehicleSystem {
     }
   }
 
+  // ---------------- wear & aging ----------------
+
+  _accumulateWear(vehicle, simMinutes, distanceTraveled) {
+    vehicle.mileageKm += Math.abs(distanceTraveled) * KM_PER_WORLD_UNIT;
+    vehicle.ageSimDays += simMinutes / 1440;
+    vehicle.wearFactor = Math.min(1, (vehicle.mileageKm / WEAR_MILEAGE_KM) * 0.6 + (vehicle.ageSimDays / WEAR_AGE_DAYS) * 0.4);
+    applyWear(vehicle.mesh, vehicle.wearFactor);
+  }
+
+  refurbish(vehicleId) {
+    const v = this.vehicles.get(vehicleId);
+    if (!v) return;
+    v.mileageKm = 0;
+    v.ageSimDays = 0;
+    v.wearFactor = 0;
+    applyWear(v.mesh, 0);
+  }
+
+  currentComfort(vehicle) {
+    const route = this.network.routes.get(vehicle.routeId);
+    const base = route?.vehicleStats?.comfortScore ?? 60;
+    return base * (1 - vehicle.wearFactor * 0.25);
+  }
+
+  currentReliability(vehicle) {
+    const route = this.network.routes.get(vehicle.routeId);
+    const base = route?.vehicleStats?.reliabilityBase ?? 80;
+    return base * (1 - vehicle.wearFactor * 0.35);
+  }
+
   update(simMinutes) {
     for (const vehicle of this.vehicles.values()) {
       const route = this.network.routes.get(vehicle.routeId);
-      if (!route || route.path.length < 2 || route.cumDistances.length < 2) continue;
-      const def = VEHICLE_TYPES[route.type];
+      if (!route || route.path.length < 2 || route.cumDistances.length < 2 || !route.vehicleStats) continue;
 
       if (vehicle.dwell > 0) {
         vehicle.dwell = Math.max(0, vehicle.dwell - simMinutes);
       } else {
-        const speed = def.speed;
+        const speed = route.vehicleStats.topSpeed;
         const prevDist = vehicle.dist;
         let newDist = prevDist + speed * simMinutes * vehicle.dir;
+        this._accumulateWear(vehicle, simMinutes, speed * simMinutes);
         const cum = route.cumDistances;
         const seq = route.sequenceStationIds;
         const total = route.length;
@@ -140,7 +154,8 @@ export class VehicleSystem {
 
         if (crossedIdx >= 0) {
           vehicle.dist = cum[crossedIdx];
-          vehicle.dwell = 0.5;
+          const doorCount = route.vehicleStats.doorCount || 1;
+          vehicle.dwell = Math.max(0.15, 0.5 * (1 - 0.08 * doorCount));
           const stationId = seq[crossedIdx];
           this._emit('arrive', { vehicle, route, stationId });
           if (route.loop) {

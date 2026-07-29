@@ -1,7 +1,6 @@
 import * as THREE from 'three';
-import {
-  STATION_COST, VEHICLE_TYPES, BASE_FARE,
-} from './config.js';
+import { STATION_COST, VEHICLE_TYPES } from './config.js';
+import { REGULATION_PRESETS } from './designer/regulations.js';
 
 function fmtMoney(n) {
   const sign = n < 0 ? '-' : '';
@@ -15,7 +14,7 @@ function el(html) {
 }
 
 export class UIController {
-  constructor({ sceneManager, city, network, vehicleSystem, passengerSystem, economy, timeSystem }) {
+  constructor({ sceneManager, city, network, vehicleSystem, passengerSystem, economy, timeSystem, catalog }) {
     this.sceneManager = sceneManager;
     this.city = city;
     this.network = network;
@@ -23,7 +22,9 @@ export class UIController {
     this.passengerSystem = passengerSystem;
     this.economy = economy;
     this.timeSystem = timeSystem;
+    this.catalog = catalog;
     this.schematicView = null; // set later via setSchematicView
+    this.vehicleDesigner = null; // set later via setVehicleDesigner
 
     this.tool = 'select';
     this.draftRoute = null;
@@ -41,6 +42,7 @@ export class UIController {
   }
 
   setSchematicView(view) { this.schematicView = view; }
+  setVehicleDesigner(vd) { this.vehicleDesigner = vd; }
 
   _cacheDom() {
     this.dom = {
@@ -129,7 +131,7 @@ export class UIController {
     const hints = {
       select: '',
       station: `Click a developed zone tile near a road to build a station (${fmtMoney(STATION_COST)}).`,
-      route: 'Click stations in order to add stops. Open the panel to pick vehicle type & finish.',
+      route: 'Click stations in order to add stops. Open the panel to choose a vehicle & finish.',
       delete: 'Click a station to remove it. Manage routes from the Routes panel.',
     };
     const text = hints[this.tool] || '';
@@ -269,49 +271,82 @@ export class UIController {
   _renderDraftPanel() {
     const route = this.draftRoute;
     const info = this.network.recomputeRoutePath(route);
-    const vehicleCost = VEHICLE_TYPES[route.type].vehicleCost * route.frequency;
+    const model = this.catalog.get(route.modelId);
+    const vehicleCost = route.vehicleStats ? route.vehicleStats.purchaseCost * route.frequency : 0;
     const totalCost = vehicleCost + info.trackCost + info.tunnelCost;
     const stationNames = route.stationIds.map(id => this.network.stations.get(id)?.name || '?').join(' → ');
 
-    const typeButtons = Object.values(VEHICLE_TYPES).map(v => `
-      <button class="action ${route.type === v.id ? '' : 'secondary'}" data-type="${v.id}" ${v.unlocked ? '' : 'disabled title="Locked - unlock via milestones"'}>
-        ${v.label}${v.unlocked ? '' : ' 🔒'}
-      </button>`).join('');
+    const vehicleSection = model ? `
+      <div class="row"><span>${model.name}</span><b>${route.vehicleStats.capacityTotal} cap · ${Math.round(route.vehicleStats.topSpeed)} spd</b></div>
+      <div class="row"><span>Compliance</span><b style="color:${route.vehicleStats.compliance.compliant ? '#6ee7c9' : '#ff6b6b'}">${route.vehicleStats.compliance.compliant ? 'OK' : 'Non-compliant'}</b></div>
+      <button class="action secondary" id="draft-choose-vehicle">Change Vehicle</button>
+    ` : `
+      <div class="row"><span>No vehicle selected</span></div>
+      <button class="action" id="draft-choose-vehicle">Choose Vehicle</button>
+    `;
 
     return `
       <div class="field"><label>Route name</label><input type="text" id="draft-name" value="${route.name}"></div>
-      <h4>Vehicle type</h4>
-      <div>${typeButtons}</div>
+      <h4>Vehicle</h4>
+      ${vehicleSection}
       <h4>Stops (${route.stationIds.length})</h4>
       <div class="row"><span>${stationNames || 'Click stations on the map'}</span></div>
       <div class="field"><label>Frequency: ${route.frequency} vehicle(s)</label>
         <input type="range" id="draft-freq" min="1" max="8" value="${route.frequency}"></div>
       <div class="field"><label><input type="checkbox" id="draft-loop" ${route.loop ? 'checked' : ''}> Loop route (one-way circuit)</label></div>
       <h4>Cost</h4>
-      <div class="row"><span>Vehicles (${route.frequency}x ${VEHICLE_TYPES[route.type].label})</span><b>${fmtMoney(vehicleCost)}</b></div>
+      ${model ? `<div class="row"><span>Vehicles (${route.frequency}x ${model.name})</span><b>${fmtMoney(vehicleCost)}</b></div>` : ''}
       ${info.trackCost ? `<div class="row"><span>New track (${info.trackTiles} tiles)</span><b>${fmtMoney(info.trackCost)}</b></div>` : ''}
       ${info.tunnelCost ? `<div class="row"><span>Tunnel construction</span><b>${fmtMoney(info.tunnelCost)}</b></div>` : ''}
       <div class="row"><span>Total</span><b>${fmtMoney(totalCost)}</b></div>
       <div style="margin-top:8px">
         <button class="action" id="draft-undo" ${route.stationIds.length ? '' : 'disabled'}>Undo Stop</button>
-        <button class="action" id="draft-finish" ${route.stationIds.length >= 2 ? '' : 'disabled'}>Finish Route</button>
+        <button class="action" id="draft-finish" ${route.stationIds.length >= 2 && model ? '' : 'disabled'}>Finish Route</button>
         <button class="action secondary" id="draft-cancel">Cancel</button>
       </div>
     `;
   }
 
-  _wireDraftPanelEvents() {
+  _openVehiclePicker() {
     const route = this.draftRoute;
-    const panel = this.dom.panelContent;
-    panel.querySelectorAll('[data-type]').forEach(btn => {
+    const categories = ['bus', 'tram', 'subway'];
+    const sections = categories.map(cat => {
+      const unlocked = VEHICLE_TYPES[cat].unlocked;
+      const models = this.catalog.list(cat);
+      const cards = models.map(m => `
+        <div class="showroom-card">
+          <img src="${m.thumbnail || ''}" class="showroom-thumb ${m.thumbnail ? '' : 'hidden'}">
+          <div class="showroom-name">${m.name}</div>
+          <button class="action secondary" data-pick="${m.id}">Select</button>
+        </div>
+      `).join('') || '<p>No designs yet for this category.</p>';
+      return `<h4>${VEHICLE_TYPES[cat].label}${unlocked ? '' : ' 🔒 locked'}</h4>${unlocked ? `<div class="showroom-grid">${cards}</div>` : ''}`;
+    }).join('');
+
+    this.openModal('Choose a Vehicle', `
+      ${sections}
+      <button class="action" id="picker-design-new" style="margin-top:10px">＋ Design a New Vehicle</button>
+    `);
+    this.dom.modalContent.querySelectorAll('[data-pick]').forEach(btn => {
       btn.addEventListener('click', () => {
-        if (btn.disabled) return;
-        this.network.setRouteType(route.id, btn.dataset.type);
+        const model = this.catalog.get(btn.dataset.pick);
+        this.network.assignModelToRoute(route, model, this.economy.activeRegulationId);
         this.network.refreshMeshes();
         this.refreshSchematic();
+        this.closeModal();
         this.openPanel('New Route', this._renderDraftPanel());
       });
     });
+    document.getElementById('picker-design-new').addEventListener('click', () => {
+      this.closeModal();
+      this.vehicleDesigner?.open();
+    });
+  }
+
+  _wireDraftPanelEvents() {
+    const route = this.draftRoute;
+    const panel = this.dom.panelContent;
+    panel.querySelector('#draft-choose-vehicle')?.addEventListener('click', () => this._openVehiclePicker());
     const nameInput = panel.querySelector('#draft-name');
     nameInput?.addEventListener('change', () => { route.name = nameInput.value || route.name; });
     const freq = panel.querySelector('#draft-freq');
@@ -343,8 +378,9 @@ export class UIController {
   _finishDraftRoute() {
     const route = this.draftRoute;
     if (!route || route.stationIds.length < 2) return;
+    if (!route.modelId) { this.showToast('Choose a vehicle before finishing the route.'); return; }
     const info = this.network.recomputeRoutePath(route);
-    const vehicleCost = VEHICLE_TYPES[route.type].vehicleCost * route.frequency;
+    const vehicleCost = route.vehicleStats.purchaseCost * route.frequency;
     const totalCost = vehicleCost + info.trackCost + info.tunnelCost;
     if (!this.economy.canAfford(totalCost)) { this.showToast(`Not enough budget - need ${fmtMoney(totalCost)}.`); return; }
     this.economy.spend(totalCost, route.id);
@@ -372,7 +408,7 @@ export class UIController {
   _renderStationPanel(station) {
     const routes = [...station.routeIds].map(id => this.network.routes.get(id)).filter(Boolean);
     const routeRows = routes.map(r => `
-      <div class="stationlist-item"><span class="swatch" style="background:#${r.color.toString(16).padStart(6, '0')}"></span>${r.name} (${VEHICLE_TYPES[r.type].label})</div>
+      <div class="stationlist-item"><span class="swatch" style="background:#${r.color.toString(16).padStart(6, '0')}"></span>${r.name} (${this.catalog.get(r.modelId)?.name || VEHICLE_TYPES[r.type].label})</div>
     `).join('') || '<div class="row"><span>No routes yet</span></div>';
 
     return `
@@ -410,8 +446,22 @@ export class UIController {
     const stationNames = route.stationIds.map(id => this.network.stations.get(id)?.name || '?').join(' → ');
     const profitToday = this.economy.routeProfitToday(route.id);
     const rstats = this.economy.routeStats.get(route.id);
+    const model = this.catalog.get(route.modelId);
+    const fleetRows = route.vehicleIds.map(vid => {
+      const v = this.vehicleSystem.vehicles.get(vid);
+      if (!v) return '';
+      const wearPct = Math.round(v.wearFactor * 100);
+      const refurbCost = model ? Math.round(model ? route.vehicleStats.purchaseCost * 0.3 * v.wearFactor : 0) : 0;
+      return `
+        <div class="stationlist-item" style="flex-direction:column;align-items:stretch;gap:3px">
+          <div class="row"><span>${(v.mileageKm).toFixed(0)} km · ${v.ageSimDays.toFixed(0)}d old</span><b>${wearPct}% worn</b></div>
+          <div class="bar-track"><div class="bar-fill" style="width:${100 - wearPct}%;background:${wearPct > 60 ? '#ff6b6b' : wearPct > 30 ? '#ffd166' : '#6ee7c9'}"></div></div>
+          ${wearPct > 5 ? `<button class="action secondary" data-refurbish="${vid}">Refurbish (${fmtMoney(refurbCost)})</button>` : ''}
+        </div>`;
+    }).join('') || '<div class="row"><span>No vehicles yet</span></div>';
+
     return `
-      <div class="row"><span>Type</span><b>${VEHICLE_TYPES[route.type].label}${route.loop ? ' (loop)' : ''}</b></div>
+      <div class="row"><span>Vehicle</span><b>${model ? model.name : 'Unassigned'}${route.loop ? ' (loop)' : ''}</b></div>
       <div class="row"><span>Stops</span><b>${route.stationIds.length}</b></div>
       <div class="row"><span>Riders today</span><b>${rstats?.ridersToday || 0}</b></div>
       <div class="row"><span>Profit today</span><b style="color:${profitToday >= 0 ? '#6ee7c9' : '#ff6b6b'}">${fmtMoney(profitToday)}</b></div>
@@ -419,6 +469,8 @@ export class UIController {
       <div class="field"><label>Frequency: ${route.frequency} vehicle(s)</label>
         <input type="range" id="route-freq" min="1" max="8" value="${route.frequency}"></div>
       <div class="field"><label>Rename</label><input type="text" id="route-name" value="${route.name}"></div>
+      <h4>Fleet</h4>
+      ${fleetRows}
       <div style="margin-top:8px">
         <button class="action danger" id="route-delete">Delete Route</button>
       </div>
@@ -435,7 +487,7 @@ export class UIController {
     panel.querySelector('#route-freq')?.addEventListener('change', (e) => {
       const newFreq = Number(e.target.value);
       const delta = newFreq - route.frequency;
-      const unitCost = VEHICLE_TYPES[route.type].vehicleCost;
+      const unitCost = route.vehicleStats?.purchaseCost || 0;
       if (delta > 0) {
         const cost = delta * unitCost;
         if (!this.economy.canAfford(cost)) { this.showToast(`Need ${fmtMoney(cost)} for ${delta} more vehicle(s).`); this.openPanel(route.name, this._renderRoutePanel(route)); return; }
@@ -446,6 +498,18 @@ export class UIController {
       this.network.setRouteFrequency(route.id, newFreq);
       this.vehicleSystem.syncRouteVehicles(route);
       this.openPanel(route.name, this._renderRoutePanel(route));
+    });
+    panel.querySelectorAll('[data-refurbish]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const vid = btn.dataset.refurbish;
+        const v = this.vehicleSystem.vehicles.get(vid);
+        if (!v) return;
+        const cost = Math.round(route.vehicleStats.purchaseCost * 0.3 * v.wearFactor);
+        if (!this.economy.canAfford(cost)) { this.showToast(`Need ${fmtMoney(cost)} to refurbish.`); return; }
+        this.economy.spend(cost, route.id);
+        this.vehicleSystem.refurbish(vid);
+        this.openPanel(route.name, this._renderRoutePanel(route));
+      });
     });
     panel.querySelector('#route-delete')?.addEventListener('click', () => {
       this.vehicleSystem.removeRouteVehicles(route.id);
@@ -502,9 +566,13 @@ export class UIController {
     const routeRows = [...this.network.routes.values()].filter(r => r.committed).map(r => {
       const stats = this.economy.routeStats.get(r.id);
       const profit = (stats?.revenueTotal || 0) - (stats?.costTotal || 0);
-      return `<tr><td>${r.name}</td><td>${VEHICLE_TYPES[r.type].label}</td><td>${stats?.ridersTotal || 0}</td>
+      return `<tr><td>${r.name}</td><td>${this.catalog.get(r.modelId)?.name || VEHICLE_TYPES[r.type].label}</td><td>${stats?.ridersTotal || 0}</td>
         <td style="color:${profit >= 0 ? '#6ee7c9' : '#ff6b6b'}">${fmtMoney(profit)}</td></tr>`;
     }).join('') || '<tr><td colspan="4">No routes yet.</td></tr>';
+
+    const regButtons = REGULATION_PRESETS.map(r => `
+      <button class="action ${this.economy.activeRegulationId === r.id ? '' : 'secondary'}" data-reg="${r.id}">${r.label}</button>
+    `).join('');
 
     const html = `
       <div class="row"><span>Budget</span><b>${fmtMoney(this.economy.budget)}</b></div>
@@ -515,6 +583,8 @@ export class UIController {
       <div style="margin:8px 0">
         <button class="action" id="loan-btn">Take $200,000 Loan (4%/wk)</button>
       </div>
+      <h4>City vehicle regulation</h4>
+      <div>${regButtons}</div>
       <h4>Recent days</h4>
       <table><thead><tr><th>Day</th><th>Income</th><th>Expense</th><th>Profit</th><th>Riders</th><th>Sat.</th></tr></thead>
       <tbody>${rows}</tbody></table>
@@ -533,6 +603,13 @@ export class UIController {
       this.openFinanceModal();
       this.showToast('Took a $200,000 loan.');
     });
+    this.dom.modalContent.querySelectorAll('[data-reg]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.economy.activeRegulationId = btn.dataset.reg;
+        this.network.resyncAllVehicleStats(this.economy.activeRegulationId);
+        this.openFinanceModal();
+      });
+    });
   }
 
   // ---------------- modal: routes list ----------------
@@ -545,7 +622,7 @@ export class UIController {
       return `
       <tr>
         <td><span class="swatch" style="display:inline-block;background:#${r.color.toString(16).padStart(6, '0')}"></span> ${r.name}</td>
-        <td>${VEHICLE_TYPES[r.type].label}</td>
+        <td>${this.catalog.get(r.modelId)?.name || VEHICLE_TYPES[r.type].label}</td>
         <td>${r.stationIds.length}</td>
         <td>${r.frequency}</td>
         <td style="color:${profit >= 0 ? '#6ee7c9' : '#ff6b6b'}">${fmtMoney(profit)}</td>

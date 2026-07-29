@@ -33,48 +33,42 @@ export const ZONE_COLORS = {
   locked: 0x2a2f2a,
 };
 
+// Category-level metadata only - per-vehicle numbers (speed/capacity/cost/etc)
+// now come from whatever VehicleModel (see js/designer/) a route is assigned.
+// `unlocked` gates which chassis categories the Vehicle Designer offers and
+// is flipped by milestones in main.js exactly as before.
 export const VEHICLE_TYPES = {
   bus: {
     id: 'bus',
     label: 'Bus',
-    speed: 42,          // world units per sim-minute
-    capacity: 30,
-    vehicleCost: 50000,
-    opCostPerDay: 600,
     needsTrack: false,
     needsTunnel: false,
-    color: 0xffb14e,
     unlocked: true,
   },
   tram: {
     id: 'tram',
     label: 'Tram',
-    speed: 72,
-    capacity: 80,
-    vehicleCost: 150000,
-    opCostPerDay: 1400,
     needsTrack: true,
     trackCostPerTile: 20000,
     needsTunnel: false,
-    color: 0x6ee7c9,
     unlocked: false,
     unlockKey: 'tram',
   },
   subway: {
     id: 'subway',
     label: 'Subway',
-    speed: 130,
-    capacity: 220,
-    vehicleCost: 400000,
-    opCostPerDay: 3200,
     needsTrack: false,
     needsTunnel: true,
     tunnelCostPerUnit: 500,
-    color: 0xd98ea0,
     unlocked: false,
     unlockKey: 'subway',
   },
 };
+
+// Fallback speed used only before a route has a vehicle model assigned.
+export const FALLBACK_VEHICLE_SPEED = 40;
+export const DEFAULT_REGULATION_ID = 'minimal';
+export const KM_PER_WORLD_UNIT = 0.05; // for the odometer shown in the Fleet panel
 
 export const STATION_COST = 80000;
 export const STATION_MAINTENANCE_PER_DAY = 120;

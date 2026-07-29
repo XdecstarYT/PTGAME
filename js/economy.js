@@ -1,4 +1,4 @@
-import { STARTING_BUDGET, BASE_FARE, VEHICLE_TYPES, STATION_MAINTENANCE_PER_DAY } from './config.js';
+import { STARTING_BUDGET, BASE_FARE, STATION_MAINTENANCE_PER_DAY, DEFAULT_REGULATION_ID } from './config.js';
 
 // Budget, fares, operating costs and the finance dashboard's data feed.
 // Kept independent of rendering/network so it's easy to reason about.
@@ -8,6 +8,7 @@ export class Economy {
     this.budget = STARTING_BUDGET;
     this.debt = 0;
     this.fare = BASE_FARE;
+    this.activeRegulationId = DEFAULT_REGULATION_ID;
 
     this.dailyIncome = 0;
     this.dailyExpense = 0;
@@ -94,8 +95,8 @@ export class Economy {
   // called once per elapsed sim-day
   applyDailyCosts(network) {
     for (const route of network.routes.values()) {
-      const def = VEHICLE_TYPES[route.type];
-      const cost = def.opCostPerDay * route.frequency;
+      if (!route.committed || !route.vehicleStats) continue;
+      const cost = route.vehicleStats.runningCostPerDay * route.frequency;
       this.spend(cost, route.id);
     }
     const stationCost = network.stations.size * STATION_MAINTENANCE_PER_DAY;
