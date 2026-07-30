@@ -41,3 +41,23 @@ export function buildPiece(id) { return BUILD_PIECES.find(p => p.id === id); }
 
 export const LEVEL_HEIGHT_M = 3;
 export const MAX_LEVELS = 6;
+
+// ---------------- Voxel decoration layer (Phase 2) ----------------
+
+// Finer-grained blocks the player can freely add/remove on top of (or
+// around) the prefab structure, Minecraft-style - much smaller than a
+// structure grid cell so they read as detail, not another wall.
+export const VOXEL_SIZE = 0.5;
+
+export const VOXEL_MATERIALS = [
+  { id: 'concrete', label: 'Concrete', color: 0x9a9a94, roughness: 0.85, metalness: 0.05 },
+  { id: 'brick', label: 'Brick', color: 0x8a4a35, roughness: 0.8, metalness: 0.05 },
+  { id: 'wood', label: 'Wood', color: 0x8a6a4a, roughness: 0.75, metalness: 0 },
+  { id: 'steel', label: 'Steel', color: 0x6b7078, roughness: 0.4, metalness: 0.6 },
+  { id: 'glass', label: 'Glass', color: 0x9fd6e8, roughness: 0.15, metalness: 0.2, transparent: true, opacity: 0.55 },
+  { id: 'stone', label: 'Stone', color: 0x7a7a72, roughness: 0.9, metalness: 0 },
+  { id: 'grass', label: 'Foliage', color: 0x5a8a45, roughness: 0.85, metalness: 0 },
+  { id: 'gold', label: 'Gold Trim', color: 0xd9b84a, roughness: 0.3, metalness: 0.8 },
+];
+
+export function voxelMaterialDef(id) { return VOXEL_MATERIALS.find(m => m.id === id) || VOXEL_MATERIALS[0]; }

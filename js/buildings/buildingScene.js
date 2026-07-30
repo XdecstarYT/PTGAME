@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { buildStructureMesh } from './buildingMeshBuilder.js';
+import { buildStructureMesh, buildVoxelMesh } from './buildingMeshBuilder.js';
 
 // A small, self-contained Three.js scene for the Building Creator preview -
 // deliberately much simpler than DesignerScene (no wear/rain/environment
@@ -34,12 +34,14 @@ export class BuildingScene {
 
     const groundGeo = new THREE.PlaneGeometry(80, 80);
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x3a3d33, roughness: 1 });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    this.scene.add(ground);
+    this.ground = new THREE.Mesh(groundGeo, groundMat);
+    this.ground.rotation.x = -Math.PI / 2;
+    this.ground.receiveShadow = true;
+    this.ground.userData.isGround = true;
+    this.scene.add(this.ground);
 
     this.buildingGroup = null;
+    this.raycaster = new THREE.Raycaster();
 
     this._resizeToContainer();
     window.addEventListener('resize', () => this._resizeToContainer());
@@ -58,8 +60,20 @@ export class BuildingScene {
       this.scene.remove(this.buildingGroup);
       this.buildingGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
     }
-    this.buildingGroup = buildStructureMesh(design);
+    this.buildingGroup = new THREE.Group();
+    this.buildingGroup.add(buildStructureMesh(design));
+    this.buildingGroup.add(buildVoxelMesh(design));
     this.scene.add(this.buildingGroup);
+  }
+
+  // Raycasts from a normalized-device-coordinate pointer position against
+  // the structure, voxels, and ground - used by the Details tab's
+  // Minecraft-style click-to-place/remove voxel interaction.
+  raycastFromPointer(ndcX, ndcY) {
+    this.raycaster.setFromCamera({ x: ndcX, y: ndcY }, this.camera);
+    const targets = this.buildingGroup ? [...this.buildingGroup.children, this.ground] : [this.ground];
+    const hits = this.raycaster.intersectObjects(targets, true);
+    return hits[0] || null;
   }
 
   render() {

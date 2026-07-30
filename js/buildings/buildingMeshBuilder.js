@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BUILD_CELL_SIZE, LEVEL_HEIGHT_M, wallMaterial } from './buildingDefs.js';
+import { BUILD_CELL_SIZE, LEVEL_HEIGHT_M, wallMaterial, VOXEL_SIZE, voxelMaterialDef } from './buildingDefs.js';
 
 function cellCenterLocal(cols, rows, c, r) {
   return {
@@ -88,5 +88,59 @@ export function buildStructureMesh(design) {
     }
   });
 
+  return group;
+}
+
+// ---------------- voxel decoration layer (Phase 2) ----------------
+
+// Voxel (x,y,z) are integer counts of VOXEL_SIZE - x/z are centered on the
+// building's local origin (same origin the structure grid uses), y=0 is the
+// layer sitting on the ground. Kept as plain functions (not a class) so the
+// same conversion is usable from both the mesh builder and the editor's
+// raycast placement logic without importing THREE-specific state.
+export function voxelWorldPosition(x, y, z) {
+  return {
+    x: x * VOXEL_SIZE,
+    y: y * VOXEL_SIZE + VOXEL_SIZE / 2,
+    z: z * VOXEL_SIZE,
+  };
+}
+
+// Converts a world-space point into the voxel coordinate it falls inside -
+// used both to find the clicked voxel (for removal) and, offset slightly
+// along a face normal first, the empty voxel adjacent to it (for placement).
+export function worldPointToVoxelCoord(point) {
+  return {
+    x: Math.round(point.x / VOXEL_SIZE),
+    y: Math.floor(point.y / VOXEL_SIZE),
+    z: Math.round(point.z / VOXEL_SIZE),
+  };
+}
+
+// Builds one tagged (userData.isVoxel/voxelKey), individually-meshed box per
+// voxel - simple and raycast-friendly. Building designs are small enough
+// (tens to low hundreds of voxels) that this is plenty fast without the
+// added complexity of InstancedMesh + manual instance-id bookkeeping;
+// revisit only if real designs turn out to need thousands of blocks.
+export function buildVoxelMesh(design) {
+  const group = new THREE.Group();
+  const matCache = new Map();
+  for (const v of design.voxels || []) {
+    if (!matCache.has(v.materialId)) {
+      const def = voxelMaterialDef(v.materialId);
+      matCache.set(v.materialId, new THREE.MeshStandardMaterial({
+        color: def.color, roughness: def.roughness, metalness: def.metalness,
+        transparent: !!def.transparent, opacity: def.opacity ?? 1,
+      }));
+    }
+    const pos = voxelWorldPosition(v.x, v.y, v.z);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(VOXEL_SIZE * 0.98, VOXEL_SIZE * 0.98, VOXEL_SIZE * 0.98), matCache.get(v.materialId));
+    mesh.position.set(pos.x, pos.y, pos.z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.isVoxel = true;
+    mesh.userData.voxelKey = `${v.x},${v.y},${v.z}`;
+    group.add(mesh);
+  }
   return group;
 }

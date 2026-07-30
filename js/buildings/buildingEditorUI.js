@@ -1,5 +1,6 @@
-import { FOOTPRINT_PRESETS, WALL_MATERIALS, BUILD_PIECES, MAX_LEVELS, footprintPreset } from './buildingDefs.js';
-import { createDefaultBuildingDesign, createEmptyLevelGrid } from './buildingModel.js';
+import { FOOTPRINT_PRESETS, WALL_MATERIALS, BUILD_PIECES, MAX_LEVELS, VOXEL_MATERIALS, footprintPreset } from './buildingDefs.js';
+import { createDefaultBuildingDesign, createEmptyLevelGrid, addVoxel, removeVoxelAt } from './buildingModel.js';
+import { worldPointToVoxelCoord } from './buildingMeshBuilder.js';
 import { BuildingScene } from './buildingScene.js';
 
 function el(html) { const d = document.createElement('div'); d.innerHTML = html.trim(); return d.firstElementChild; }
@@ -7,8 +8,8 @@ function el(html) { const d = document.createElement('div'); d.innerHTML = html.
 // Freeform Building Creator: a "Structure" tab for painting prefab pieces
 // (walls/windows/doors/floors/roofs) per floor on a grid - the same
 // paint-a-grid interaction already proven in the station builder's layout
-// editor, live-previewed in 3D. A "Details" tab (Phase 2) will add
-// Minecraft-style voxel blocks layered on top for freeform decoration.
+// editor - plus a "Details" tab with Minecraft-style voxel blocks clicked
+// directly onto the 3D preview, layered on top for freeform decoration.
 export class BuildingEditor {
   constructor() {
     this.dom = {
@@ -24,11 +25,59 @@ export class BuildingEditor {
     this.design = null;
     this.activeLevel = 0;
     this.brush = 'wall';
+    this.activeTab = 'structure';
+    this.voxelMaterial = 'concrete';
+    this.voxelMode = 'place'; // 'place' | 'erase'
 
     this.dom.close.addEventListener('click', () => this.close());
     for (const btn of this.dom.tabButtons) {
-      btn.addEventListener('click', () => this._renderTab());
+      btn.addEventListener('click', () => {
+        this.activeTab = btn.dataset.tab;
+        for (const b of this.dom.tabButtons) b.classList.toggle('active', b === btn);
+        this._renderTab();
+      });
     }
+    this._wireViewportInteraction();
+  }
+
+  // Distinguishes a click (place/remove a voxel) from an OrbitControls drag
+  // (rotate/pan/zoom) the same way the main game's 3D click handler does:
+  // both listen on the same canvas without interfering, and a small enough
+  // pointer movement between down/up counts as a click.
+  _wireViewportInteraction() {
+    const canvas = this.dom.canvas;
+    let down = null;
+    canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; });
+    canvas.addEventListener('pointerup', (e) => {
+      if (!down) return;
+      const dist = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+      down = null;
+      if (dist > 6) return;
+      if (this.activeTab === 'details') this._handleVoxelClick(e);
+    });
+  }
+
+  _handleVoxelClick(e) {
+    const rect = this.dom.canvas.getBoundingClientRect();
+    const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    const hit = this.scene.raycastFromPointer(ndcX, ndcY);
+    if (!hit || !hit.face) return;
+
+    if (this.voxelMode === 'erase') {
+      if (!hit.object.userData.isVoxel) return;
+      const [x, y, z] = hit.object.userData.voxelKey.split(',').map(Number);
+      if (!removeVoxelAt(this.design, x, y, z)) return;
+    } else {
+      const worldNormal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+      const target = hit.point.clone().addScaledVector(worldNormal, 0.25);
+      const { x, y, z } = worldPointToVoxelCoord(target);
+      if (y < 0) return; // never place below ground
+      if (!addVoxel(this.design, x, y, z, this.voxelMaterial)) return;
+    }
+    this.scene.setDesign(this.design);
+    if (this.activeTab === 'details') this._renderTab();
+    this._renderStats();
   }
 
   open() {
@@ -56,6 +105,43 @@ export class BuildingEditor {
   }
 
   _renderTab() {
+    if (this.activeTab === 'details') this._tabDetails();
+    else this._tabStructure();
+  }
+
+  _tabDetails() {
+    const materialButtons = VOXEL_MATERIALS.map(m => `
+      <button class="material-swatch ${this.voxelMaterial === m.id ? 'active' : ''}" data-voxel-material="${m.id}">
+        <span class="swatch-dot" style="background:#${m.color.toString(16).padStart(6, '0')}"></span>${m.label}
+      </button>
+    `).join('');
+
+    this.dom.tabContent.innerHTML = `
+      <h4>Block Material</h4>
+      <div class="material-swatch-row">${materialButtons}</div>
+      <h4>Mode</h4>
+      <div class="piece-brush-row">
+        <button class="piece-brush ${this.voxelMode === 'place' ? 'active' : ''}" data-voxel-mode="place">🧱 Place</button>
+        <button class="piece-brush ${this.voxelMode === 'erase' ? 'active' : ''}" data-voxel-mode="erase">⬛ Erase</button>
+      </div>
+      <p class="designer-hint">Click a surface on the 3D preview (right) to place a block flush against it, Minecraft-style. Switch to Erase and click an existing block to remove it. Drag to orbit as usual.</p>
+    `;
+
+    this.dom.tabContent.querySelectorAll('[data-voxel-material]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.voxelMaterial = btn.dataset.voxelMaterial;
+        this._tabDetails();
+      });
+    });
+    this.dom.tabContent.querySelectorAll('[data-voxel-mode]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.voxelMode = btn.dataset.voxelMode;
+        this._tabDetails();
+      });
+    });
+  }
+
+  _tabStructure() {
     const design = this.design;
     const footprintButtons = FOOTPRINT_PRESETS.map(f => `
       <button class="piece-brush ${design.footprintId === f.id ? 'active' : ''}" data-footprint="${f.id}">${f.label} (${f.cols}×${f.rows})</button>
@@ -225,6 +311,7 @@ export class BuildingEditor {
       <div class="row"><span>Walls / pillars</span><b>${wallCount}</b></div>
       <div class="row"><span>Windows</span><b>${windowCount}</b></div>
       <div class="row"><span>Doors</span><b>${doorCount}</b></div>
+      <div class="row"><span>Decoration blocks</span><b>${design.voxels.length}</b></div>
       ${doorCount === 0 ? '<div class="row violation">⚠️ No doors placed - add at least one entrance.</div>' : ''}
     `;
   }
