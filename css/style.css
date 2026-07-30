@@ -510,6 +510,56 @@ html, body {
 .designer-stats .row b { color: var(--text); }
 .designer-stats .row.violation { color: var(--danger); }
 
+/* ==================== Building Creator ==================== */
+
+#building-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 70;
+  background: #181620;
+  display: flex;
+  flex-direction: column;
+}
+#building-layer.hidden { display: none; }
+
+#building-viewport { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+.building-tab {
+  flex: 1; background: none; border: none; color: var(--text-dim);
+  padding: 10px 6px; font-size: 12px; cursor: pointer; border-bottom: 2px solid transparent;
+}
+.building-tab:hover { color: var(--text); }
+.building-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 700; }
+
+.piece-brush-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.piece-brush {
+  background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--text-dim);
+  border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer;
+}
+.piece-brush.active { background: var(--accent); color: #201a10; border-color: var(--accent); font-weight: 700; }
+
+.material-swatch-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.material-swatch {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--text-dim);
+  border-radius: 6px; padding: 5px 9px; font-size: 11px; cursor: pointer;
+}
+.material-swatch .swatch-dot { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+.material-swatch.active { border-color: var(--accent); background: rgba(255,177,78,0.15); font-weight: 700; color: var(--text); }
+
+.building-level-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.building-level-tab {
+  background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--text-dim);
+  padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 11px;
+}
+.building-level-tab.active { border-color: var(--accent); background: rgba(255,177,78,0.15); color: var(--text); }
+.building-level-tab.add-level { color: #9fd18f; border-style: dashed; }
+
+#building-grid-canvas {
+  width: 100%; height: 240px; background: #10131a; border: 1px solid var(--border);
+  border-radius: 8px; cursor: crosshair; touch-action: none;
+}
+
 /* Showroom + comparison (rendered inside the shared #modal-content) */
 .showroom-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
 .showroom-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }

@@ -58,6 +58,7 @@
       </div>
       <div class="topbar-group view-toggle">
         <button id="btn-design-vehicle" title="Vehicle Designer">🛠️ Design Vehicle</button>
+        <button id="btn-build-creator" title="Building Creator">🏗️ Build</button>
         <button id="btn-view-toggle" title="Toggle schematic map">🗺️ Map</button>
         <button id="btn-heatmap-toggle" title="Cycle demand/crowding heatmap (schematic view only)">🔥 Heatmap: Off</button>
         <button id="btn-audio-toggle" title="Toggle ambient sound">🔇</button>
@@ -144,6 +145,28 @@
           </div>
           <canvas id="designer-viewport"></canvas>
           <div class="designer-stats" id="designer-stats"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Building Creator overlay -->
+    <div id="building-layer" class="hidden">
+      <div class="designer-header">
+        <span>🏗️ Building Creator</span>
+        <div class="designer-header-actions">
+          <button id="building-close">✕</button>
+        </div>
+      </div>
+      <div class="designer-body">
+        <div class="designer-side">
+          <div class="designer-tabs">
+            <button class="building-tab active" data-tab="structure">Structure</button>
+          </div>
+          <div class="designer-tab-content" id="building-tab-content"></div>
+        </div>
+        <div class="designer-preview">
+          <canvas id="building-viewport"></canvas>
+          <div class="designer-stats" id="building-stats"></div>
         </div>
       </div>
     </div>

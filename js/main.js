@@ -18,6 +18,7 @@ import { AudioSystem } from './audio.js';
 import { SaveLoadSystem } from './saveLoad.js';
 import { CargoSystem, bumpCargoIdCounter } from './cargo.js';
 import { ShippingContractSystem } from './shippingContracts.js';
+import { BuildingEditor } from './buildings/buildingEditorUI.js';
 import { allScenarios, exportScenario, importScenarioFromFile, deleteCustomScenario } from './scenarios.js';
 
 const canvas = document.getElementById('viewport');
@@ -58,6 +59,9 @@ ui.setSchematicView(schematicView);
 const vehicleDesigner = new VehicleDesigner({ catalog, network, economy, ui });
 ui.setVehicleDesigner(vehicleDesigner);
 document.getElementById('btn-design-vehicle').addEventListener('click', () => vehicleDesigner.open());
+
+const buildingEditor = new BuildingEditor();
+document.getElementById('btn-build-creator').addEventListener('click', () => buildingEditor.open());
 
 const staffing = new Staffing(economy);
 ui.setStaffing(staffing);
@@ -289,6 +293,7 @@ function animate(now) {
   sceneManager.render();
   if (schematicView.visible) schematicView.render();
   if (vehicleDesigner.isOpen) vehicleDesigner.render(dt / 1000);
+  if (buildingEditor.isOpen) buildingEditor.render(dt / 1000);
   newsTicker.update(dt);
 
   hudAccum += dt;
