@@ -131,14 +131,32 @@ export class UI {
 
   _renderLevelTabs(station, layoutEditor) {
     this.dom.editorLevelTabs.innerHTML = '';
+    const isInterchange = station.typeId === 'interchange';
     station.levels.forEach((level, i) => {
+      const wrap = el('<div class="level-tab-wrap"></div>');
       const tab = el(`<button class="level-tab${i === layoutEditor.activeLevel ? ' active' : ''}">${level.name}</button>`);
       tab.addEventListener('click', () => {
         layoutEditor.setActiveLevel(i);
         this._renderLevelTabs(station, layoutEditor);
         this.refreshEditorStats(station);
       });
-      this.dom.editorLevelTabs.appendChild(tab);
+      wrap.appendChild(tab);
+
+      if (isInterchange) {
+        const select = el('<select class="level-mode-select"></select>');
+        for (const type of STATION_TYPES) {
+          const opt = el(`<option value="${type.id}">${type.icon} ${type.name}</option>`);
+          if ((level.servedType || station.typeId) === type.id) opt.setAttribute('selected', 'selected');
+          select.appendChild(opt);
+        }
+        select.addEventListener('change', () => {
+          layoutEditor.setLevelServedType(i, select.value);
+          this.refreshEditorStats(station);
+        });
+        select.addEventListener('click', (e) => e.stopPropagation());
+        wrap.appendChild(select);
+      }
+      this.dom.editorLevelTabs.appendChild(wrap);
     });
     if (layoutEditor.canAddLevel()) {
       const cost = layoutEditor.levelAddCost();

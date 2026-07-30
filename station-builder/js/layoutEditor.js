@@ -36,10 +36,20 @@ export class LayoutEditor {
     if (!station.levels.length) {
       const rows = Math.round((station.d * CELL_SIZE) / LAYOUT_CELL_SIZE);
       const cols = Math.round((station.w * CELL_SIZE) / LAYOUT_CELL_SIZE);
-      station.levels.push({ id: 'level0', name: LEVEL_NAMES[0], grid: emptyGrid(rows, cols) });
+      station.levels.push({ id: 'level0', name: LEVEL_NAMES[0], servedType: station.typeId, grid: emptyGrid(rows, cols) });
     }
     this.activeLevel = 0;
     this.render();
+  }
+
+  // Multi-modal interchanges can assign a different served transport mode
+  // per level (e.g. a bus concourse above a subway platform) - statEngine.js
+  // checks each level's platform length against its own servedType.
+  setLevelServedType(index, typeId) {
+    const level = this.station?.levels[index];
+    if (!level) return;
+    level.servedType = typeId;
+    this.onChange();
   }
 
   get level() { return this.station ? this.station.levels[this.activeLevel] : null; }
@@ -65,7 +75,10 @@ export class LayoutEditor {
     const rows = this.level.grid.length;
     const cols = this.level.grid[0].length;
     const idx = this.station.levels.length;
-    this.station.levels.push({ id: `level${idx}`, name: LEVEL_NAMES[idx] || `Level ${idx + 1}`, grid: emptyGrid(rows, cols) });
+    this.station.levels.push({
+      id: `level${idx}`, name: LEVEL_NAMES[idx] || `Level ${idx + 1}`,
+      servedType: this.station.typeId, grid: emptyGrid(rows, cols),
+    });
     this.activeLevel = idx;
     this.render();
     this.onChange();
