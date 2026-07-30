@@ -1,6 +1,7 @@
 import { SIZE_TIERS, STATION_TYPES, INTERIOR_OBJECTS } from './config.js';
 import { computeStats } from './statEngine.js';
 import { tierUpgradePlan } from './upgrades.js';
+import { saveTemplate, templatesForType, applyTemplate, deleteTemplate, templateFits } from './templates.js';
 
 function el(html) {
   const t = document.createElement('template');
@@ -31,10 +32,21 @@ export class UI {
       editorStationName: document.getElementById('editor-station-name'),
       editorLevelTabs: document.getElementById('editor-level-tabs'),
       editorPalette: document.getElementById('editor-palette'),
+      paletteList: document.getElementById('palette-list'),
       editorStats: document.getElementById('editor-stats'),
       btnEditorBack: document.getElementById('btn-editor-back'),
       walkHud: document.getElementById('walkmode-hud'),
       btnUpgradeTier: document.getElementById('btn-upgrade-tier'),
+      btnSaveTemplate: document.getElementById('btn-save-template'),
+      btnLoadTemplate: document.getElementById('btn-load-template'),
+      galleryOverlay: document.getElementById('template-gallery-overlay'),
+      galleryGrid: document.getElementById('template-gallery-grid'),
+      galleryEmpty: document.getElementById('template-gallery-empty'),
+      btnGalleryClose: document.getElementById('btn-gallery-close'),
+      nameModal: document.getElementById('template-name-modal'),
+      nameInput: document.getElementById('template-name-input'),
+      btnNameCancel: document.getElementById('btn-template-name-cancel'),
+      btnNameSave: document.getElementById('btn-template-name-save'),
     };
 
     this._renderTypePicker();
@@ -44,6 +56,15 @@ export class UI {
       this.refresh();
     });
     this.dom.btnUpgradeTier.addEventListener('click', () => this._onUpgradeClick());
+    this.dom.btnSaveTemplate.addEventListener('click', () => this._openSaveTemplateModal());
+    this.dom.btnLoadTemplate.addEventListener('click', () => this._openGallery());
+    this.dom.btnGalleryClose.addEventListener('click', () => this._closeGallery());
+    this.dom.btnNameCancel.addEventListener('click', () => this._closeSaveTemplateModal());
+    this.dom.btnNameSave.addEventListener('click', () => this._confirmSaveTemplate());
+    this.dom.nameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') this._confirmSaveTemplate();
+      if (e.key === 'Escape') this._closeSaveTemplateModal();
+    });
 
     this.refresh();
   }
@@ -136,7 +157,7 @@ export class UI {
   hideWalkHud() { this.dom.walkHud.classList.add('hidden'); }
 
   _renderPalette(layoutEditor) {
-    this.dom.editorPalette.innerHTML = '<h3>Place</h3>';
+    this.dom.paletteList.innerHTML = '';
     for (const obj of INTERIOR_OBJECTS) {
       const btn = el(`<button class="palette-btn" data-obj="${obj.id}" title="${obj.name}">
         <span class="palette-swatch" style="background:${obj.color}"></span>
@@ -146,10 +167,106 @@ export class UI {
       </button>`);
       btn.addEventListener('click', () => {
         layoutEditor.setBrush(obj.id);
-        this.dom.editorPalette.querySelectorAll('[data-obj]').forEach(b => b.classList.toggle('active', b.dataset.obj === obj.id));
+        this.dom.paletteList.querySelectorAll('[data-obj]').forEach(b => b.classList.toggle('active', b.dataset.obj === obj.id));
       });
       if (obj.id === layoutEditor.brush) btn.classList.add('active');
-      this.dom.editorPalette.appendChild(btn);
+      this.dom.paletteList.appendChild(btn);
+    }
+  }
+
+  // ---------------- templates & gallery (Phase 6) ----------------
+
+  _openSaveTemplateModal() {
+    if (!this._currentStation) return;
+    this.dom.nameInput.value = this._currentStation.name;
+    this.dom.nameModal.classList.remove('hidden');
+    this.dom.nameInput.focus();
+    this.dom.nameInput.select();
+  }
+
+  _closeSaveTemplateModal() {
+    this.dom.nameModal.classList.add('hidden');
+  }
+
+  _confirmSaveTemplate() {
+    const station = this._currentStation;
+    if (!station) return;
+    saveTemplate(this.dom.nameInput.value.trim(), station);
+    this._closeSaveTemplateModal();
+    this.showToast(`Saved "${this.dom.nameInput.value.trim() || station.name}" as a template.`);
+  }
+
+  _openGallery() {
+    if (!this._currentStation) return;
+    this._renderGallery();
+    this.dom.galleryOverlay.classList.remove('hidden');
+  }
+
+  _closeGallery() {
+    this.dom.galleryOverlay.classList.add('hidden');
+  }
+
+  _renderThumbnail(canvas, grid) {
+    const ctx = canvas.getContext('2d');
+    const rows = grid.length, cols = grid[0].length;
+    const cellPx = Math.min(canvas.width / cols, canvas.height / rows);
+    const offX = (canvas.width - cols * cellPx) / 2;
+    const offY = (canvas.height - rows * cellPx) / 2;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const obj = INTERIOR_OBJECTS.find(o => o.id === grid[r][c]) || INTERIOR_OBJECTS[0];
+        ctx.fillStyle = obj.color;
+        ctx.fillRect(offX + c * cellPx, offY + r * cellPx, cellPx + 0.5, cellPx + 0.5);
+      }
+    }
+  }
+
+  _renderGallery() {
+    const station = this._currentStation;
+    const templates = templatesForType(station.typeId).sort((a, b) => b.createdAt - a.createdAt);
+    this.dom.galleryEmpty.classList.toggle('hidden', templates.length > 0);
+    this.dom.galleryGrid.innerHTML = '';
+
+    for (const template of templates) {
+      const tier = SIZE_TIERS.find(t => t.id === template.tierId);
+      const fits = templateFits(template, station);
+      const stats = computeStats({
+        typeId: template.typeId, tierId: template.tierId,
+        w: template.w, d: template.d, levels: template.levels,
+      });
+      const card = el(`<div class="template-card">
+        <canvas class="template-thumb" width="200" height="80"></canvas>
+        <div class="template-name">${template.name}</div>
+        <div class="template-sub">${tier ? tier.name : template.tierId} · ${template.w}×${template.d} · ${template.levels.length} level${template.levels.length > 1 ? 's' : ''}</div>
+        <div class="template-stat">Capacity: ${stats.capacity}/hr</div>
+        <div class="template-card-actions">
+          <button class="action-btn small apply-btn"${fits ? '' : ' disabled'}>${fits ? '✅ Apply' : '📐 Size mismatch'}</button>
+          <button class="action-btn small delete-btn">🗑️</button>
+        </div>
+      </div>`);
+      this._renderThumbnail(card.querySelector('.template-thumb'), template.levels[0].grid);
+      card.querySelector('.apply-btn').addEventListener('click', () => this._applyTemplateCard(template));
+      card.querySelector('.delete-btn').addEventListener('click', () => {
+        deleteTemplate(template.id);
+        this._renderGallery();
+      });
+      this.dom.galleryGrid.appendChild(card);
+    }
+  }
+
+  _applyTemplateCard(template) {
+    const station = this._currentStation;
+    const result = applyTemplate(template, station, this.economy);
+    if (!result.ok) { this.showToast(result.reason, true); return; }
+    this._closeGallery();
+    this._currentLayoutEditor?.render();
+    this._renderLevelTabs(station, this._currentLayoutEditor);
+    this.refreshEditorStats(station);
+    const costNote = result.cost > 0 ? ` (${fmtMoney(result.cost)})` : '';
+    this.showToast(`Applied template "${template.name}"${costNote}.`);
+    if (result.levelsSkipped > 0) {
+      this.showToast(`${result.levelsSkipped} level(s) from the template weren't applied - add more levels to this station first.`, true);
     }
   }
 

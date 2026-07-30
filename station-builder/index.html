@@ -59,7 +59,14 @@
         <button id="btn-walk-mode" class="action-btn small walk">🚶 Walk Mode</button>
       </div>
       <canvas id="layout-canvas"></canvas>
-      <div id="editor-palette" class="hud"></div>
+      <div id="editor-palette" class="hud">
+        <div class="template-actions">
+          <button id="btn-save-template" class="action-btn small">💾 Save as Template</button>
+          <button id="btn-load-template" class="action-btn small">📂 Load Template</button>
+        </div>
+        <h3>Place</h3>
+        <div id="palette-list"></div>
+      </div>
       <div id="editor-stats" class="hud"></div>
     </div>
 
@@ -67,6 +74,30 @@
     <div id="walkmode-hud" class="hud hidden">
       <span id="walkmode-hint">WASD to move, mouse to look (click to lock cursor), E/Q to use stairs/escalators/elevators, Esc to exit.</span>
       <button id="btn-walkmode-back" class="action-btn small">← Back to Editor</button>
+    </div>
+
+    <!-- Template gallery: browse/apply/delete saved layouts for this station type -->
+    <div id="template-gallery-overlay" class="modal-overlay hidden">
+      <div class="modal-panel gallery-panel">
+        <div class="modal-header">
+          <h2>📂 Station Templates</h2>
+          <button id="btn-gallery-close" class="action-btn small">✕ Close</button>
+        </div>
+        <div id="template-gallery-empty" class="gallery-empty hidden">No saved templates for this station type yet - build a layout you like, then use "Save as Template".</div>
+        <div id="template-gallery-grid" class="gallery-grid"></div>
+      </div>
+    </div>
+
+    <!-- Save-as-template naming prompt -->
+    <div id="template-name-modal" class="modal-overlay hidden">
+      <div class="modal-panel name-modal-panel">
+        <h2>💾 Save as Template</h2>
+        <input id="template-name-input" type="text" maxlength="40" placeholder="Template name" />
+        <div class="modal-actions">
+          <button id="btn-template-name-cancel" class="action-btn small">Cancel</button>
+          <button id="btn-template-name-save" class="action-btn small upgrade">Save</button>
+        </div>
+      </div>
     </div>
   </div>
 
