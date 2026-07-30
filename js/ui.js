@@ -772,8 +772,8 @@ export class UIController {
     const rows = hist.map(h => `
       <tr><td>Day ${h.day}</td><td>${fmtMoney(h.income)}</td><td>${fmtMoney(h.expense)}</td>
       <td style="color:${h.profit >= 0 ? '#6ee7c9' : '#ff6b6b'}">${fmtMoney(h.profit)}</td>
-      <td>${h.ridership}</td><td>${Math.round(h.satisfaction)}%</td></tr>
-    `).join('') || '<tr><td colspan="6">No data yet - let a day pass.</td></tr>';
+      <td>${h.ridership}</td><td>${Math.round(h.satisfaction)}%</td><td>${fmtMoney(h.freightRevenue || 0)}</td></tr>
+    `).join('') || '<tr><td colspan="7">No data yet - let a day pass.</td></tr>';
 
     const routeRows = [...this.network.routes.values()].filter(r => r.committed).map(r => {
       const stats = this.economy.routeStats.get(r.id);
@@ -808,11 +808,16 @@ export class UIController {
         <button class="action secondary" id="train-btn">Train Staff (${fmtMoney(this.staffing.trainCost)})</button>
       </div>
       <h4>Recent days</h4>
-      <table><thead><tr><th>Day</th><th>Income</th><th>Expense</th><th>Profit</th><th>Riders</th><th>Sat.</th></tr></thead>
+      <table><thead><tr><th>Day</th><th>Income</th><th>Expense</th><th>Profit</th><th>Riders</th><th>Sat.</th><th>Freight</th></tr></thead>
       <tbody>${rows}</tbody></table>
       <h4>Route profitability (all-time)</h4>
       <table><thead><tr><th>Route</th><th>Type</th><th>Riders</th><th>Profit</th></tr></thead>
       <tbody>${routeRows}</tbody></table>
+      <h4>Freight</h4>
+      <div class="row"><span>Freight revenue today</span><b style="color:#6ee7c9">${fmtMoney(this.economy.dailyFreightRevenue)}</b></div>
+      <div class="row"><span>Freight revenue (all-time)</span><b>${fmtMoney(this.economy.totalFreightRevenue)}</b></div>
+      <div class="row"><span>Depots / trucks</span><b>${this.cargoSystem?.depots.size || 0} / ${this.cargoSystem?.trucks.size || 0}</b></div>
+      <div class="row"><span>Shipments delivered / spoiled</span><b>${this.cargoSystem?.deliveredCount || 0} / ${this.cargoSystem?.spoiledCount || 0}</b></div>
       <h4>Network stats</h4>
       <div class="row"><span>Coverage</span><b>${Math.round(this.network.coveragePercent() * 100)}%</b></div>
       <div class="row"><span>Lost demand today</span><b>${this.economy.lostDemandToday}</b></div>

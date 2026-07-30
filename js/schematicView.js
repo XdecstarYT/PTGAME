@@ -5,13 +5,14 @@ import { WORLD_SIZE, ZONE, ZONE_COLORS, VEHICLE_TYPES } from './config.js';
 // exact same click -> tool pipeline as the 3D view via onTileClick.
 
 export class SchematicView {
-  constructor({ canvas, city, network, vehicleSystem, onTileClick }) {
+  constructor({ canvas, city, network, vehicleSystem, onTileClick, cargoSystem }) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.city = city;
     this.network = network;
     this.vehicleSystem = vehicleSystem;
     this.onTileClick = onTileClick;
+    this.cargoSystem = cargoSystem;
     this.visible = false;
     this._dirty = true;
     this.heatmapMode = 'off'; // 'off' | 'demand' | 'crowding'
@@ -239,6 +240,35 @@ export class SchematicView {
         ctx.font = 'bold 10px sans-serif';
         ctx.fillText(`${station.waitingPassengers.length}`, x, z + 20);
       }
+    }
+
+    this._drawFreight(ctx);
+  }
+
+  // Cargo depots (amber squares) and their trucks (small amber dots),
+  // drawn the same way stations/vehicles are above but visually distinct
+  // so the freight layer reads as a separate network at a glance.
+  _drawFreight(ctx) {
+    if (!this.cargoSystem) return;
+    for (const depot of this.cargoSystem.depots.values()) {
+      const [x, z] = this.worldToScreen(depot.worldX, depot.worldZ);
+      ctx.fillStyle = '#d9a066';
+      ctx.fillRect(x - 6, z - 6, 12, 12);
+      ctx.strokeStyle = '#12131a';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(x - 6, z - 6, 12, 12);
+      ctx.font = '11px sans-serif';
+      ctx.fillStyle = 'rgba(240,236,255,0.85)';
+      ctx.textAlign = 'center';
+      ctx.fillText(depot.name, x, z - 12);
+    }
+    for (const truck of this.cargoSystem.trucks.values()) {
+      if (truck.state !== 'enroute') continue;
+      const [x, z] = this.worldToScreen(truck.worldX, truck.worldZ);
+      ctx.fillStyle = '#d9a066';
+      ctx.beginPath();
+      ctx.arc(x, z, 4, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 }

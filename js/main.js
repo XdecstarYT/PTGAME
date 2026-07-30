@@ -50,7 +50,7 @@ ui.setCargoSystem(cargoSystem);
 
 const schematicView = new SchematicView({
   canvas: document.getElementById('schematic'),
-  city, network, vehicleSystem,
+  city, network, vehicleSystem, cargoSystem,
   onTileClick: (x, z) => ui.handleWorldTileClick(x, z),
 });
 ui.setSchematicView(schematicView);
