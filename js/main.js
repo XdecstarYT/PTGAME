@@ -16,6 +16,7 @@ import { Staffing } from './staffing.js';
 import { NewsTicker } from './newsTicker.js';
 import { AudioSystem } from './audio.js';
 import { SaveLoadSystem } from './saveLoad.js';
+import { CargoSystem, bumpCargoIdCounter } from './cargo.js';
 import { allScenarios, exportScenario, importScenarioFromFile, deleteCustomScenario } from './scenarios.js';
 
 const canvas = document.getElementById('viewport');
@@ -37,9 +38,14 @@ vehicleSystem.buildMeshes(sceneManager.scene);
 const passengerSystem = new PassengerSystem(city, network, economy, vehicleSystem);
 passengerSystem.buildMeshes(sceneManager.scene);
 
+const cargoSystem = new CargoSystem(city, network, economy);
+cargoSystem.buildMeshes(sceneManager.scene);
+cargoSystem.setCatalog(catalog);
+
 const timeSystem = new TimeSystem();
 
 const ui = new UIController({ sceneManager, city, network, vehicleSystem, passengerSystem, economy, timeSystem, catalog });
+ui.setCargoSystem(cargoSystem);
 
 const schematicView = new SchematicView({
   canvas: document.getElementById('schematic'),
@@ -68,6 +74,7 @@ const newsTicker = new NewsTicker({
 
 const saveLoadSystem = new SaveLoadSystem({
   city, network, vehicleSystem, economy, timeSystem, eventSystem, contractSystem, staffing, ui, schematicView,
+  cargoSystem,
 });
 
 function fmtWhen(ts) {
@@ -211,6 +218,7 @@ timeSystem.on('tick', (simMinutes) => {
   city.update(simMinutes);
   passengerSystem.update(simMinutes, hour);
   vehicleSystem.update(simMinutes);
+  cargoSystem.update(simMinutes);
   sceneManager.setTimeOfDay(hour);
   city.setWindowGlow(hour);
   audioSystem.setRushHourIntensity(TimeSystem.demandMultiplier(hour));
@@ -231,6 +239,7 @@ timeSystem.on('newDay', (newDay) => {
   eventSystem.onNewDay(newDay);
   contractSystem.onNewDay(newDay);
   staffing.onNewDay(network);
+  cargoSystem.onNewDay();
 
   const last = economy.history[economy.history.length - 1];
   if (last) ui.showDayToast(endedDay, last);
@@ -336,6 +345,7 @@ function renderStartMenu() {
       city.regenerateWithScenario(seed, sc.config);
       network.resetAll();
       vehicleSystem.resetAll();
+      cargoSystem.resetAll();
       network.refreshMeshes();
       ui.refreshRouteChips();
       ui.refreshHud();

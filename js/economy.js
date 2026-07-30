@@ -24,10 +24,12 @@ export class Economy {
     this.dailyRidership = 0;
     this.lostDemandToday = 0;
     this.carTripsToday = 0;
+    this.dailyFreightRevenue = 0;
 
     this.totalRevenue = 0;
     this.totalExpense = 0;
     this.totalRidership = 0;
+    this.totalFreightRevenue = 0;
 
     this.routeStats = new Map(); // routeId -> {revenueToday, costToday, revenueTotal, costTotal, ridersToday, ridersTotal}
     this.history = []; // per-day snapshots for the finance dashboard chart
@@ -74,6 +76,16 @@ export class Economy {
         r.revenueTotal += share;
       }
     }
+    return amount;
+  }
+
+  // Called once per delivered freight shipment (see cargo.js).
+  earnFreight(amount) {
+    this.budget += amount;
+    this.dailyIncome += amount;
+    this.totalRevenue += amount;
+    this.dailyFreightRevenue += amount;
+    this.totalFreightRevenue += amount;
     return amount;
   }
 
@@ -157,6 +169,7 @@ export class Economy {
       satisfaction,
       coverage,
       budget: this.budget,
+      freightRevenue: this.dailyFreightRevenue,
     });
     if (this.history.length > 120) this.history.shift();
     for (const r of this.routeStats.values()) { r.revenueToday = 0; r.costToday = 0; r.ridersToday = 0; }
@@ -165,6 +178,7 @@ export class Economy {
     this.dailyRidership = 0;
     this.lostDemandToday = 0;
     this.carTripsToday = 0;
+    this.dailyFreightRevenue = 0;
   }
 
   // ---------------- save/load ----------------
@@ -177,6 +191,7 @@ export class Economy {
       fuelPriceMultiplier: this.fuelPriceMultiplier, subsidyMultiplier: this.subsidyMultiplier,
       dailyIncome: this.dailyIncome, dailyExpense: this.dailyExpense, dailyRidership: this.dailyRidership,
       lostDemandToday: this.lostDemandToday, carTripsToday: this.carTripsToday,
+      dailyFreightRevenue: this.dailyFreightRevenue, totalFreightRevenue: this.totalFreightRevenue,
       totalRevenue: this.totalRevenue, totalExpense: this.totalExpense, totalRidership: this.totalRidership,
       routeStats: [...this.routeStats.entries()],
       history: this.history,

@@ -1,6 +1,8 @@
 import * as THREE from 'three';
-import { STATION_COST, VEHICLE_TYPES } from './config.js';
+import { STATION_COST, VEHICLE_TYPES, CARGO_DEPOT_COST, CARGO_TYPES } from './config.js';
 import { REGULATION_PRESETS } from './designer/regulations.js';
+import { FREIGHT_CHASSIS_DEFS, freightChassisById } from './designer/freightChassisDefs.js';
+import { createDefaultFreightModel, computeFreightStats } from './designer/freightModel.js';
 
 function fmtMoney(n) {
   const sign = n < 0 ? '-' : '';
@@ -28,11 +30,13 @@ export class UIController {
     this.eventSystem = null; // set later via setEventSystem
     this.contractSystem = null; // set later via setContractSystem
     this.staffing = null; // set later via setStaffing
+    this.cargoSystem = null; // set later via setCargoSystem
 
     this.tool = 'select';
     this.draftRoute = null;
     this.selectedStationId = null;
     this.selectedRouteId = null;
+    this.selectedDepotId = null;
     this.milestoneListeners = [];
 
     this._cacheDom();
@@ -49,6 +53,7 @@ export class UIController {
   setEventSystem(es) { this.eventSystem = es; }
   setContractSystem(cs) { this.contractSystem = cs; }
   setStaffing(s) { this.staffing = s; }
+  setCargoSystem(cs) { this.cargoSystem = cs; }
 
   _cacheDom() {
     this.dom = {
@@ -150,7 +155,8 @@ export class UIController {
       select: '',
       station: `Click a developed zone tile near a road to build a station (${fmtMoney(STATION_COST)}).`,
       route: 'Click stations in order to add stops. Open the panel to choose a vehicle & finish.',
-      delete: 'Click a station to remove it. Manage routes from the Routes panel.',
+      depot: `Click a developed zone tile near a road to build a cargo depot (${fmtMoney(CARGO_DEPOT_COST)}).`,
+      delete: 'Click a station or depot to remove it. Manage routes from the Routes panel.',
     };
     const text = hints[this.tool] || '';
     this.dom.toolHint.textContent = text;
@@ -266,16 +272,26 @@ export class UIController {
     for (const s of this.network.stations.values()) {
       if (s.x === tx && s.z === tz) { clickedStation = s; break; }
     }
+    let clickedDepot = null;
+    if (this.cargoSystem) {
+      for (const d of this.cargoSystem.depots.values()) {
+        if (d.x === tx && d.z === tz) { clickedDepot = d; break; }
+      }
+    }
 
     if (this.tool === 'select') {
       if (clickedStation) this.selectStation(clickedStation.id);
+      else if (clickedDepot) this.selectDepot(clickedDepot.id);
       else this.closePanel();
     } else if (this.tool === 'station') {
       this._placeStation(tx, tz);
+    } else if (this.tool === 'depot') {
+      this._placeDepot(tx, tz);
     } else if (this.tool === 'route') {
       if (clickedStation) this._addStationToDraft(clickedStation.id);
     } else if (this.tool === 'delete') {
       if (clickedStation) this.deleteStation(clickedStation.id);
+      else if (clickedDepot) this.deleteDepot(clickedDepot.id);
     }
   }
 
@@ -312,6 +328,102 @@ export class UIController {
     this.refreshSchematic();
     this.closePanel();
     this.showToast(`Deleted ${station.name}`);
+  }
+
+  // ---------------- cargo depots ----------------
+
+  _placeDepot(tx, tz) {
+    if (!this.cargoSystem) return;
+    const check = this.cargoSystem.canPlaceDepot(tx, tz);
+    if (!check.ok) { this.showToast(check.reason); return; }
+    if (!this.economy.canAfford(CARGO_DEPOT_COST)) { this.showToast('Not enough budget to build a depot.'); return; }
+    this.economy.spend(CARGO_DEPOT_COST);
+    const depot = this.cargoSystem.addDepot(tx, tz);
+    this.showToast(`Built ${depot.name} (${fmtMoney(CARGO_DEPOT_COST)})`);
+    this.selectDepot(depot.id);
+  }
+
+  deleteDepot(id) {
+    const depot = this.cargoSystem.depots.get(id);
+    if (!depot) return;
+    this.cargoSystem.removeDepot(id);
+    this.closePanel();
+    this.showToast(`Deleted ${depot.name}`);
+  }
+
+  selectDepot(id) {
+    this.selectedDepotId = id;
+    this.selectedStationId = null;
+    this.selectedRouteId = null;
+    const depot = this.cargoSystem.depots.get(id);
+    if (!depot) return;
+    this.openPanel(depot.name, this._renderDepotPanel(depot));
+  }
+
+  _renderDepotPanel(depot) {
+    const model = depot.modelId ? this.catalog.get(depot.modelId) : null;
+    const truckOptions = FREIGHT_CHASSIS_DEFS.filter(c => c.category === 'truck').map(c => `
+      <option value="${c.id}" ${model?.chassisId === c.id ? 'selected' : ''}>${c.name} (${c.cargoCapacityTons}t · ${fmtMoney(c.baseCostPerCar)})</option>
+    `).join('');
+
+    const truckSection = model ? (() => {
+      const stats = computeFreightStats(model);
+      return `
+        <div class="row"><span>${model.name}</span><b>${stats.capacityTonsPerCar}t/truck</b></div>
+        <div class="row"><span>Carries</span><b>${stats.compatibleCargo.map(id => CARGO_TYPES[id]?.icon).join(' ')}</b></div>
+        <div class="field"><label>Trucks: ${depot.truckCount} (${fmtMoney(stats.purchaseCost)} each)</label>
+          <input type="range" id="depot-truck-count" min="0" max="4" value="${depot.truckCount}"></div>
+      `;
+    })() : `
+      <div class="field"><label>Truck type</label><select id="depot-chassis">${truckOptions}</select></div>
+      <button class="action" id="depot-assign">Buy First Truck</button>
+    `;
+
+    return `
+      <h4>Fleet</h4>
+      ${truckSection}
+      <h4>Activity</h4>
+      <div class="row"><span>Shipments spawned</span><b>${depot.stats.shipmentsSpawned}</b></div>
+      <div class="row"><span>Shipments delivered</span><b>${depot.stats.shipmentsDelivered}</b></div>
+      <div class="field"><label>Rename</label><input type="text" id="depot-name" value="${depot.name}"></div>
+      <div style="margin-top:8px">
+        <button class="action danger" id="depot-delete">Delete Depot</button>
+      </div>
+    `;
+  }
+
+  _wireDepotPanelEvents(depot) {
+    const panel = this.dom.panelContent;
+    panel.querySelector('#depot-name')?.addEventListener('change', (e) => {
+      depot.name = e.target.value || depot.name;
+      this.dom.panelTitle.textContent = depot.name;
+    });
+    panel.querySelector('#depot-delete')?.addEventListener('click', () => this.deleteDepot(depot.id));
+    panel.querySelector('#depot-assign')?.addEventListener('click', () => {
+      const chassisId = panel.querySelector('#depot-chassis').value;
+      const chassis = freightChassisById(chassisId);
+      const model = createDefaultFreightModel(chassisId);
+      const saved = this.catalog.save(model);
+      const cost = computeFreightStats(saved).purchaseCost;
+      if (!this.economy.canAfford(cost)) { this.showToast('Not enough budget for a truck.'); return; }
+      this.economy.spend(cost);
+      this.cargoSystem.assignModelToDepot(depot, saved, 1);
+      this.showToast(`Bought a ${chassis.name} (${fmtMoney(cost)})`);
+      this.selectDepot(depot.id);
+    });
+    const countSlider = panel.querySelector('#depot-truck-count');
+    countSlider?.addEventListener('change', (e) => {
+      const model = this.catalog.get(depot.modelId);
+      const newCount = Number(e.target.value);
+      const delta = newCount - depot.truckCount;
+      if (delta > 0) {
+        const cost = computeFreightStats(model).purchaseCost * delta;
+        if (!this.economy.canAfford(cost)) { this.showToast('Not enough budget for more trucks.'); countSlider.value = depot.truckCount; return; }
+        this.economy.spend(cost);
+      }
+      this.cargoSystem.assignModelToDepot(depot, model, newCount);
+      this.selectDepot(depot.id);
+    });
   }
 
   // ---------------- route drafting ----------------
@@ -614,6 +726,7 @@ export class UIController {
     if (this.draftRoute && title === 'New Route') this._wireDraftPanelEvents();
     else if (this.selectedStationId) this._wireStationPanelEvents(this.network.stations.get(this.selectedStationId));
     else if (this.selectedRouteId) this._wireRoutePanelEvents(this.network.routes.get(this.selectedRouteId));
+    else if (this.selectedDepotId) this._wireDepotPanelEvents(this.cargoSystem.depots.get(this.selectedDepotId));
     this.dom.panelClose.onclick = () => { this._cancelDraftRoute(); this.closePanel(); };
   }
 
@@ -621,6 +734,7 @@ export class UIController {
     this.dom.sidepanel.classList.add('hidden');
     this.selectedStationId = null;
     this.selectedRouteId = null;
+    this.selectedDepotId = null;
   }
 
   // refresh whatever is currently open (called every so often so live stats stay fresh)
@@ -632,6 +746,9 @@ export class UIController {
     } else if (this.selectedRouteId) {
       const r = this.network.routes.get(this.selectedRouteId);
       if (r) { this.dom.panelContent.innerHTML = this._renderRoutePanel(r); this._wireRoutePanelEvents(r); }
+    } else if (this.selectedDepotId) {
+      const d = this.cargoSystem?.depots.get(this.selectedDepotId);
+      if (d) { this.dom.panelContent.innerHTML = this._renderDepotPanel(d); this._wireDepotPanelEvents(d); }
     }
   }
 
