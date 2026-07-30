@@ -5,6 +5,14 @@
 
 export const CHASSIS_DEFS = [
   {
+    id: 'bus_mini', category: 'bus', manufacturer: 'Roadster', name: 'Roadster Mini',
+    lengthUnits: 5, gridRows: 2, gridCols: 5, doorZones: [0],
+    baseCostPerCar: 26000, baseSpeed: 40, baseRunningCostPerCar: 340,
+    minConsist: 1, maxConsist: 1,
+    defaultAisleWidthCm: 55, minAisleWidthCm: 40, maxAisleWidthCm: 80,
+    defaultStepHeightCm: 32, minStepHeightCm: 10, maxStepHeightCm: 42,
+  },
+  {
     id: 'bus_standard', category: 'bus', manufacturer: 'Roadster', name: 'Roadster Standard',
     lengthUnits: 8, gridRows: 3, gridCols: 8, doorZones: [0, 5],
     baseCostPerCar: 45000, baseSpeed: 42, baseRunningCostPerCar: 550,
@@ -21,6 +29,14 @@ export const CHASSIS_DEFS = [
     defaultStepHeightCm: 28, minStepHeightCm: 5, maxStepHeightCm: 40,
   },
   {
+    id: 'tram_heritage', category: 'tram', manufacturer: 'Continental', name: 'Continental Heritage',
+    lengthUnits: 8, gridRows: 3, gridCols: 8, doorZones: [0, 6],
+    baseCostPerCar: 68000, baseSpeed: 48, baseRunningCostPerCar: 900,
+    minConsist: 1, maxConsist: 1,
+    defaultAisleWidthCm: 60, minAisleWidthCm: 45, maxAisleWidthCm: 90,
+    defaultStepHeightCm: 24, minStepHeightCm: 5, maxStepHeightCm: 35,
+  },
+  {
     id: 'tram_t1', category: 'tram', manufacturer: 'Continental', name: 'Continental T1',
     lengthUnits: 10, gridRows: 4, gridCols: 10, doorZones: [0, 4, 9],
     baseCostPerCar: 95000, baseSpeed: 70, baseRunningCostPerCar: 1100,
@@ -35,6 +51,14 @@ export const CHASSIS_DEFS = [
     minConsist: 1, maxConsist: 3,
     defaultAisleWidthCm: 78, minAisleWidthCm: 50, maxAisleWidthCm: 110,
     defaultStepHeightCm: 16, minStepHeightCm: 0, maxStepHeightCm: 35,
+  },
+  {
+    id: 'metro_m2_light', category: 'subway', manufacturer: 'Metro', name: 'Metro M2 Light Rail',
+    lengthUnits: 11, gridRows: 4, gridCols: 11, doorZones: [0, 5, 10],
+    baseCostPerCar: 150000, baseSpeed: 105, baseRunningCostPerCar: 1600,
+    minConsist: 1, maxConsist: 4,
+    defaultAisleWidthCm: 82, minAisleWidthCm: 55, maxAisleWidthCm: 115,
+    defaultStepHeightCm: 10, minStepHeightCm: 0, maxStepHeightCm: 30,
   },
   {
     id: 'metro_m4', category: 'subway', manufacturer: 'Metro', name: 'Metro M4',

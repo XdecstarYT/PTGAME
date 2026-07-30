@@ -3,6 +3,7 @@ import { CHASSIS_DEFS, chassisById, chassisForCategory } from './chassisDefs.js'
 import { powertrainsForCategory, powertrainById } from './powertrainDefs.js';
 import { REGULATION_PRESETS, regulationById } from './regulations.js';
 import { createDefaultModel, computeStats } from './vehicleModel.js';
+import { FEATURE_DEFS, MAX_PRIORITY_SEATS } from './featureDefs.js';
 import { InteriorEditor } from './interiorEditor.js';
 import { DesignerScene } from './designerScene.js';
 
@@ -80,9 +81,20 @@ export class VehicleDesigner {
     const src = this.catalog.get(modelId);
     if (!src) return;
     this.model = JSON.parse(JSON.stringify(src));
+    this._normalizeModel();
     this.open();
     this.switchTab('chassis');
     this._refreshAll();
+  }
+
+  // Designs saved before the Features tab / operator branding existed won't
+  // have these fields - fill in safe defaults rather than special-casing
+  // "undefined" everywhere they're read.
+  _normalizeModel() {
+    if (!this.model.features) this.model.features = {};
+    for (const f of FEATURE_DEFS) if (this.model.features[f.id] === undefined) this.model.features[f.id] = false;
+    if (this.model.features.prioritySeats === undefined) this.model.features.prioritySeats = 0;
+    if (this.model.livery.operatorName === undefined) this.model.livery.operatorName = '';
   }
 
   switchTab(tab) {
@@ -112,7 +124,10 @@ export class VehicleDesigner {
   // ---------------- tabs ----------------
 
   _renderTab() {
-    const fn = { chassis: this._tabChassis, interior: this._tabInterior, livery: this._tabLivery, regs: this._tabRegs }[this.activeTab];
+    const fn = {
+      chassis: this._tabChassis, interior: this._tabInterior, livery: this._tabLivery,
+      features: this._tabFeatures, regs: this._tabRegs,
+    }[this.activeTab];
     fn.call(this);
   }
 
@@ -207,6 +222,8 @@ export class VehicleDesigner {
           <option value="adwrap" ${this.model.livery.pattern === 'adwrap' ? 'selected' : ''}>Ad Wrap (sells ad space instead of a paint job)</option>
         </select>
       </div>
+      <div class="field"><label>Operator name (shown on the destination board)</label>
+        <input type="text" id="livery-operator" maxlength="24" placeholder="${this.model.name}" value="${this.model.livery.operatorName || ''}"></div>
       <h4>Consist</h4>
       <div class="field"><label>Cars: ${this.model.consistCars} (${chassis.minConsist}-${chassis.maxConsist} allowed)</label>
         <input type="range" id="consist-slider" min="${chassis.minConsist}" max="${chassis.maxConsist}" value="${this.model.consistCars}"></div>
@@ -219,9 +236,44 @@ export class VehicleDesigner {
     document.getElementById('livery-primary').addEventListener('input', (e) => { this.model.livery.primary = e.target.value; this.scene.setVehicle(this.model, chassis); this._renderStats(); });
     document.getElementById('livery-secondary').addEventListener('input', (e) => { this.model.livery.secondary = e.target.value; this.scene.setVehicle(this.model, chassis); this._renderStats(); });
     document.getElementById('livery-pattern').addEventListener('change', (e) => { this.model.livery.pattern = e.target.value; this.scene.setVehicle(this.model, chassis); this._renderStats(); });
+    document.getElementById('livery-operator').addEventListener('input', (e) => { this.model.livery.operatorName = e.target.value; this.scene.setVehicle(this.model, chassis); });
     document.getElementById('consist-slider').addEventListener('change', (e) => { this.model.consistCars = Number(e.target.value); this.scene.setVehicle(this.model, chassis); this._tabLivery(); this._renderStats(); });
     document.getElementById('aisle-slider').addEventListener('input', (e) => { this.model.aisleWidthCm = Number(e.target.value); this._renderStats(); });
     document.getElementById('step-slider').addEventListener('input', (e) => { this.model.stepHeightCm = Number(e.target.value); this._renderStats(); });
+  }
+
+  _tabFeatures() {
+    const chassis = this._chassis();
+    const seatCount = this.model.floorPlan.flat().filter(c => c === 'seat').length;
+    const maxPriority = Math.min(MAX_PRIORITY_SEATS, seatCount);
+    const featureButtons = FEATURE_DEFS.map(f => {
+      const active = !!this.model.features[f.id];
+      return `<button class="action ${active ? '' : 'secondary'}" data-feature="${f.id}">
+        ${f.icon} ${f.label}<br><small>${fmtMoney(f.costPerCar)}/car + ${fmtMoney(f.runningCostPerDayPerCar)}/day/car</small>
+      </button>`;
+    }).join('');
+
+    this.dom.tabContent.innerHTML = `
+      <h4>Onboard amenities</h4>
+      <div class="chassis-card-row">${featureButtons}</div>
+      <h4>Priority seating</h4>
+      <div class="field"><label>Reserved seats: ${this.model.features.prioritySeats || 0} (of ${seatCount} seats)</label>
+        <input type="range" id="priority-slider" min="0" max="${maxPriority}" value="${Math.min(this.model.features.prioritySeats || 0, maxPriority)}"></div>
+      <p class="designer-hint">Amenities add to purchase price and daily running cost but boost comfort (and a little reliability for CCTV). Priority seats are a designation on existing seats, not new equipment - free, but capped by how many seats you've actually painted.</p>
+    `;
+    this.dom.tabContent.querySelectorAll('[data-feature]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.feature;
+        this.model.features[id] = !this.model.features[id];
+        this.scene.setVehicle(this.model, chassis);
+        this._tabFeatures();
+        this._renderStats();
+      });
+    });
+    document.getElementById('priority-slider').addEventListener('input', (e) => {
+      this.model.features.prioritySeats = Number(e.target.value);
+      this._renderStats();
+    });
   }
 
   _tabRegs() {
@@ -263,6 +315,8 @@ export class VehicleDesigner {
       <div class="row"><span>Purchase cost</span><b>${fmtMoney(s.purchaseCost)}</b></div>
       <div class="row"><span>Running cost/day</span><b>${fmtMoney(s.runningCostPerDay)}</b></div>
       ${s.adRevenuePerDay ? `<div class="row"><span>Ad revenue/day</span><b style="color:#6ee7c9">+${fmtMoney(s.adRevenuePerDay)}</b></div>` : ''}
+      ${s.activeFeatures.length ? `<div class="row"><span>Amenities</span><b>${s.activeFeatures.map(f => f.icon).join(' ')} (${fmtMoney(s.featureCostPerCar)}/car)</b></div>` : ''}
+      ${s.prioritySeats ? `<div class="row"><span>Priority seats</span><b>${s.prioritySeats}</b></div>` : ''}
       <div class="row"><span>Top speed</span><b>${s.topSpeed}</b></div>
       <div class="row"><span>Comfort</span><b>${s.comfortScore}</b></div>
       <div class="row"><span>Boarding speed</span><b>${s.boardingSpeedScore}</b></div>

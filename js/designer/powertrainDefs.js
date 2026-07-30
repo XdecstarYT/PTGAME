@@ -7,6 +7,10 @@ export const POWERTRAIN_DEFS = [
     costMult: 1.0, speedMult: 1.0, runningCostMult: 1.15, emissions: 1.0, reliabilityMod: 0,
   },
   {
+    id: 'cng', label: 'CNG (Natural Gas)', categories: ['bus'],
+    costMult: 1.08, speedMult: 0.98, runningCostMult: 0.85, emissions: 0.6, reliabilityMod: -1,
+  },
+  {
     id: 'hybrid', label: 'Hybrid', categories: ['bus', 'tram'],
     costMult: 1.15, speedMult: 1.0, runningCostMult: 0.9, emissions: 0.45, reliabilityMod: -3,
   },

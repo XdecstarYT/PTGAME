@@ -1,6 +1,7 @@
 import { chassisById } from './chassisDefs.js';
 import { powertrainById, powertrainsForCategory } from './powertrainDefs.js';
 import { checkCompliance, regulationById } from './regulations.js';
+import { FEATURE_DEFS, defaultFeatures, MAX_PRIORITY_SEATS, PRIORITY_SEAT_COMFORT_BONUS_EACH } from './featureDefs.js';
 
 // A VehicleModel is a plain, JSON-serializable data object (so it can be
 // saved to localStorage / exported as-is) - all derived numbers are computed
@@ -33,7 +34,8 @@ export function createDefaultModel(chassisId) {
     stepHeightCm: chassis.defaultStepHeightCm,
     doorZonesActive: chassis.doorZones.map(() => true),
     floorPlan: createDefaultFloorPlan(chassis),
-    livery: { primary: '#3a6ea5', secondary: '#f4f0ff', pattern: 'stripe' },
+    livery: { primary: '#3a6ea5', secondary: '#f4f0ff', pattern: 'stripe', operatorName: '' },
+    features: defaultFeatures(),
     thumbnail: null,
     createdAt: Date.now(),
   };
@@ -87,8 +89,18 @@ export function computeStats(model, opts = {}) {
   const accessibleBays = wheelchairCells;
 
   const interiorFitoutPerCar = seatCount * 150 + standingCells * 60 + wheelchairCells * 500;
-  const purchaseCost = Math.round((chassis.baseCostPerCar * powertrain.costMult + interiorFitoutPerCar) * model.consistCars + 2000);
-  const runningCostPerDay = Math.round(chassis.baseRunningCostPerCar * powertrain.runningCostMult * model.consistCars);
+
+  const features = model.features || {};
+  const activeFeatures = FEATURE_DEFS.filter(f => features[f.id]);
+  const featureCostPerCar = activeFeatures.reduce((sum, f) => sum + f.costPerCar, 0);
+  const featureRunningCostPerCar = activeFeatures.reduce((sum, f) => sum + f.runningCostPerDayPerCar, 0);
+  const featureComfortBonus = activeFeatures.reduce((sum, f) => sum + f.comfortBonus, 0);
+  const featureReliabilityBonus = activeFeatures.reduce((sum, f) => sum + f.reliabilityBonus, 0);
+  const prioritySeats = Math.min(MAX_PRIORITY_SEATS, seatCount, features.prioritySeats || 0);
+  const priorityComfortBonus = prioritySeats * PRIORITY_SEAT_COMFORT_BONUS_EACH;
+
+  const purchaseCost = Math.round((chassis.baseCostPerCar * powertrain.costMult + interiorFitoutPerCar + featureCostPerCar) * model.consistCars + 2000);
+  const runningCostPerDay = Math.round((chassis.baseRunningCostPerCar * powertrain.runningCostMult + featureRunningCostPerCar) * model.consistCars);
 
   const consistSpeedPenalty = 1 - Math.min(0.25, 0.015 * (model.consistCars - 1));
   const topSpeed = Math.round(chassis.baseSpeed * powertrain.speedMult * consistSpeedPenalty * 10) / 10;
@@ -96,10 +108,11 @@ export function computeStats(model, opts = {}) {
   const standingRatio = capacityTotalPerCar > 0 ? capacityStandingPerCar / capacityTotalPerCar : 0;
   const aisleSpan = Math.max(1, chassis.maxAisleWidthCm - chassis.minAisleWidthCm);
   const aisleBonus = (model.aisleWidthCm - chassis.minAisleWidthCm) / aisleSpan;
-  const comfortScore = Math.round(Math.max(0, Math.min(100, 78 - standingRatio * 35 + aisleBonus * 20)));
+  const comfortScore = Math.round(Math.max(0, Math.min(100,
+    78 - standingRatio * 35 + aisleBonus * 20 + featureComfortBonus + priorityComfortBonus)));
 
   const boardingSpeedScore = Math.round(Math.max(0, Math.min(100, 40 + doorCount * 13)));
-  const reliabilityBase = Math.round(Math.max(10, Math.min(100, 92 + powertrain.reliabilityMod)));
+  const reliabilityBase = Math.round(Math.max(10, Math.min(100, 92 + powertrain.reliabilityMod + featureReliabilityBonus)));
   const emissionsScore = Math.round(powertrain.emissions * model.consistCars * 10) / 10;
 
   // an ad wrap sells the exterior as ad space instead of just a paint job
@@ -129,5 +142,6 @@ export function computeStats(model, opts = {}) {
     compliance, connected, ruleset,
     paybackDays, runningCostPerPassenger,
     assumedRidership, assumedFare,
+    activeFeatures, featureCostPerCar, featureRunningCostPerCar, prioritySeats,
   };
 }
