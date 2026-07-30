@@ -2,13 +2,13 @@ import * as THREE from 'three';
 import { LAYOUT_CELL_SIZE, CELL_SIZE, interiorObject } from './config.js';
 import { CrowdPreview } from './crowdPreview.js';
 import { computeStats } from './statEngine.js';
+import { buildFurnitureMesh } from './furniture.js';
 
 const LEVEL_HEIGHT_M = 4; // vertical gap between stacked levels in the walkable view
 const PLAYER_HEIGHT = 1.7;
 const PLAYER_RADIUS = 0.35;
 const MOVE_SPEED = 3.2; // m/s
 const WALL_HEIGHT = 3;
-const OBSTACLE_HEIGHT = 1.1;
 
 // First-person walkable inspection mode for a single selected station.
 // Builds a simple extruded-from-the-grid 3D representation of whichever
@@ -160,36 +160,32 @@ export class WalkController {
         const cx = o.x + (c + 0.5) * LAYOUT_CELL_SIZE;
         const cz = o.z + (r + 0.5) * LAYOUT_CELL_SIZE;
 
-        if (obj.walkable && obj.category !== 'circulation') {
-          const decal = new THREE.Mesh(
-            new THREE.PlaneGeometry(LAYOUT_CELL_SIZE * 0.94, LAYOUT_CELL_SIZE * 0.94),
-            new THREE.MeshStandardMaterial({ color: obj.color }),
-          );
-          decal.rotation.x = -Math.PI / 2;
-          decal.position.set(cx, o.y + 0.02, cz);
-          group.add(decal);
-        } else if (obj.category === 'circulation') {
-          const marker = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.28, 0.28, 2.4, 10),
-            new THREE.MeshStandardMaterial({ color: obj.color, emissive: obj.color, emissiveIntensity: 0.25 }),
-          );
-          marker.position.set(cx, o.y + 1.2, cz);
-          group.add(marker);
-          const decal = new THREE.Mesh(
-            new THREE.PlaneGeometry(LAYOUT_CELL_SIZE * 0.94, LAYOUT_CELL_SIZE * 0.94),
-            new THREE.MeshStandardMaterial({ color: obj.color }),
-          );
-          decal.rotation.x = -Math.PI / 2;
-          decal.position.set(cx, o.y + 0.02, cz);
-          group.add(decal);
+        const furniture = buildFurnitureMesh(id, obj.color);
+        if (furniture) {
+          furniture.position.set(cx, o.y, cz);
+          group.add(furniture);
+          // Circulation objects still get a floor decal underneath so
+          // they read clearly against the floor from a distance.
+          if (obj.category === 'circulation') {
+            const decal = new THREE.Mesh(
+              new THREE.PlaneGeometry(LAYOUT_CELL_SIZE * 0.94, LAYOUT_CELL_SIZE * 0.94),
+              new THREE.MeshStandardMaterial({ color: obj.color }),
+            );
+            decal.rotation.x = -Math.PI / 2;
+            decal.position.set(cx, o.y + 0.02, cz);
+            group.add(decal);
+          }
         } else {
-          const box = new THREE.Mesh(
-            new THREE.BoxGeometry(LAYOUT_CELL_SIZE * 0.85, OBSTACLE_HEIGHT, LAYOUT_CELL_SIZE * 0.85),
+          // Walkable, non-circulation cells with no dedicated furniture
+          // shape (platform/waiting_area/entrance) - a floor decal is
+          // enough since there's nothing physically standing there.
+          const decal = new THREE.Mesh(
+            new THREE.PlaneGeometry(LAYOUT_CELL_SIZE * 0.94, LAYOUT_CELL_SIZE * 0.94),
             new THREE.MeshStandardMaterial({ color: obj.color }),
           );
-          box.position.set(cx, o.y + OBSTACLE_HEIGHT / 2, cz);
-          box.castShadow = true;
-          group.add(box);
+          decal.rotation.x = -Math.PI / 2;
+          decal.position.set(cx, o.y + 0.02, cz);
+          group.add(decal);
         }
       }
     }

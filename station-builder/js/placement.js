@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {
   CELL_SIZE, SIZE_TIERS, STATION_TYPES, stationType, ACCESS_TOLERANCE_CELLS,
 } from './config.js';
+import { buildStationShell } from './architecture.js';
 
 const FEATURE_FOR_RULE = {
   road: ['road'],
@@ -142,26 +143,25 @@ export class PlacementSystem {
   }
 
   _buildStationMesh(station) {
-    const type = this.currentType;
+    const type = stationType(station.typeId);
     const group = new THREE.Group();
     const worldX = (station.x + station.w / 2) * CELL_SIZE;
     const worldZ = (station.z + station.d / 2) * CELL_SIZE;
+    const footprintW = station.w * CELL_SIZE;
+    const footprintD = station.d * CELL_SIZE;
 
-    const padGeo = new THREE.BoxGeometry(station.w * CELL_SIZE, 0.3, station.d * CELL_SIZE);
+    const padGeo = new THREE.BoxGeometry(footprintW, 0.3, footprintD);
     const pad = new THREE.Mesh(padGeo, new THREE.MeshStandardMaterial({ color: type.color }));
     pad.position.set(worldX, 0.15, worldZ);
     pad.castShadow = true;
     pad.receiveShadow = true;
     group.add(pad);
 
-    // A simple placeholder shell so the footprint reads as a building, not
-    // just a colored pad. Full architecture styling arrives in Phase 7.
-    const shellH = 3 + SIZE_TIERS.findIndex(t => t.id === station.tierId) * 1.4;
-    const shellGeo = new THREE.BoxGeometry(station.w * CELL_SIZE * 0.7, shellH, station.d * CELL_SIZE * 0.7);
-    const shell = new THREE.Mesh(shellGeo, new THREE.MeshStandardMaterial({ color: 0xf2f2f0, roughness: 0.7 }));
-    shell.position.set(worldX, 0.3 + shellH / 2, worldZ);
-    shell.castShadow = true;
-    shell.receiveShadow = true;
+    // Type-specific architecture (shelter/pavilion/hall) sized to the
+    // footprint - see architecture.js.
+    const shell = buildStationShell(station.typeId, station.tierId, footprintW, footprintD);
+    shell.position.set(worldX, 0.3, worldZ);
+    shell.traverse(m => { if (m.isMesh) m.receiveShadow = true; });
     group.add(shell);
 
     return group;

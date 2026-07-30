@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { LAYOUT_CELL_SIZE } from './config.js';
 
-const AGENT_COLORS = [0xd9784f, 0x4f7fd9, 0x5fae6f, 0xc9a63d, 0x9d6fae, 0xd9528f];
+const CLOTHING_COLORS = [0xd9784f, 0x4f7fd9, 0x5fae6f, 0xc9a63d, 0x9d6fae, 0xd9528f];
+const SKIN_COLORS = [0xe0b088, 0xc68a5f, 0x8d5a3c, 0xf0c9a0];
 
 // Placeholder passenger agents populated into walk mode so the player can
 // see how crowded/legible a level actually feels at ground level - simple
-// idle-wander capsules, not a real pedestrian simulation.
+// idle-wander body+head figures, not a real pedestrian simulation.
 export class CrowdPreview {
   constructor({ scene, origin, rows, cols, grid, agentCount }) {
     this.agents = [];
@@ -25,17 +26,31 @@ export class CrowdPreview {
       const baseX = origin.x + (c + 0.5) * LAYOUT_CELL_SIZE;
       const baseZ = origin.z + (r + 0.5) * LAYOUT_CELL_SIZE;
 
-      const color = AGENT_COLORS[i % AGENT_COLORS.length];
-      const mesh = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.22, 1.05, 4, 8),
-        new THREE.MeshStandardMaterial({ color }),
+      const clothing = CLOTHING_COLORS[i % CLOTHING_COLORS.length];
+      const skin = SKIN_COLORS[Math.floor(Math.random() * SKIN_COLORS.length)];
+
+      const group = new THREE.Group();
+      const body = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.2, 0.75, 4, 8),
+        new THREE.MeshStandardMaterial({ color: clothing }),
       );
-      mesh.position.set(baseX, origin.y + 0.22 + 0.525, baseZ);
-      mesh.castShadow = true;
-      scene.add(mesh);
+      body.position.y = 0.2 + 0.375;
+      body.castShadow = true;
+      group.add(body);
+
+      const head = new THREE.Mesh(
+        new THREE.SphereGeometry(0.14, 10, 8),
+        new THREE.MeshStandardMaterial({ color: skin }),
+      );
+      head.position.y = 0.2 + 0.75 + 0.14;
+      head.castShadow = true;
+      group.add(head);
+
+      group.position.set(baseX, origin.y, baseZ);
+      scene.add(group);
 
       this.agents.push({
-        mesh, baseX, baseZ,
+        mesh: group, baseX, baseZ,
         phase: Math.random() * Math.PI * 2,
         speed: 0.4 + Math.random() * 0.5,
         radius: 0.3 + Math.random() * 0.5,
