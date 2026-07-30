@@ -301,6 +301,37 @@ function elevatorMesh(color) {
   return castAll(group);
 }
 
+function entranceMesh(color) {
+  const group = new THREE.Group();
+  const frame = new THREE.Mesh(
+    new THREE.BoxGeometry(S * 0.6, 1.05, 0.05),
+    new THREE.MeshStandardMaterial({ color: darker(color, 0.5) }),
+  );
+  frame.position.set(0, 0.55, S * 0.46);
+  group.add(frame);
+
+  // A glowing green "EXIT" sign above the doorway - real wayfinding
+  // signage rather than just a colored floor tile.
+  const canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 96;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#0c2a14';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#3ee06a';
+  ctx.font = 'bold 44px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('EXIT', canvas.width / 2, canvas.height / 2);
+  const tex = new THREE.CanvasTexture(canvas);
+  const sign = new THREE.Mesh(
+    new THREE.PlaneGeometry(S * 0.5, S * 0.19),
+    new THREE.MeshStandardMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.9 }),
+  );
+  sign.position.set(0, 1.25, S * 0.46);
+  group.add(sign);
+  return castAll(group);
+}
+
 const BUILDERS = {
   bench: benchMesh,
   ticket_machine: ticketMachineMesh,
@@ -311,6 +342,7 @@ const BUILDERS = {
   stairs: stairsMesh,
   escalator: escalatorMesh,
   elevator: elevatorMesh,
+  entrance: entranceMesh,
 };
 
 export function buildFurnitureMesh(id, color) {

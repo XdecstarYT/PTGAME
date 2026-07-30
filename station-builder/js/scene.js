@@ -36,6 +36,17 @@ export class SceneManager {
 
     this._buildLights();
 
+    // Day/night cycle - reuses the main game's sun-angle-from-time-of-day
+    // approach (see js/scene.js there), just driven by a simple looping
+    // clock instead of the full simulation calendar since this standalone
+    // tool has no economy-tied day count.
+    this.timeOfDay = 10.5; // hours, 0-24 - start mid-morning
+    this.dayLengthSeconds = 300; // one full day/night cycle in real seconds
+    this._skyDay = new THREE.Color(0x9fd1ff);
+    this._skyNight = new THREE.Color(0x0c1224);
+    this._sunDay = new THREE.Color(0xfff3d6);
+    this._sunDusk = new THREE.Color(0xff9d5c);
+
     window.addEventListener('resize', () => this.onResize());
   }
 
@@ -61,6 +72,37 @@ export class SceneManager {
 
     this.ambient = new THREE.AmbientLight(0x445066, 0.35);
     this.scene.add(this.ambient);
+  }
+
+  // Advances the time-of-day clock and re-derives sun position/color, sky/
+  // fog color, and ambient levels from it - called once per frame from
+  // main.js's tick() with the frame's (unclamped) delta time in seconds.
+  updateDayNight(dt) {
+    this.timeOfDay = (this.timeOfDay + (dt / this.dayLengthSeconds) * 24) % 24;
+    const t = this.timeOfDay;
+
+    // Sun elevation: a sine curve peaking at noon (t=12), below the horizon
+    // for the ~10 hours centered on midnight.
+    const elevation = Math.sin(((t - 6) / 12) * Math.PI);
+    const azimuth = ((t - 6) / 24) * Math.PI * 2;
+    const sunDist = WORLD_SIZE * 0.6;
+    const sunHeight = Math.max(elevation, -0.15) * WORLD_SIZE * 0.55 + WORLD_SIZE * 0.08;
+    this.sun.position.set(
+      WORLD_SIZE / 2 + Math.cos(azimuth) * sunDist,
+      Math.max(sunHeight, 4),
+      WORLD_SIZE / 2 + Math.sin(azimuth) * sunDist,
+    );
+
+    const dayAmt = Math.max(0, elevation);
+    const duskAmt = Math.max(0, 1 - Math.abs(elevation) * 3); // brief warm glow near sunrise/sunset
+    this.sun.intensity = 0.08 + dayAmt * 1.15;
+    this.sun.color.copy(this._sunDay).lerp(this._sunDusk, Math.min(1, duskAmt));
+
+    const nightAmt = Math.max(0, -elevation);
+    this.scene.background.copy(this._skyDay).lerp(this._skyNight, Math.min(1, nightAmt * 1.4));
+    this.scene.fog.color.copy(this.scene.background);
+    this.hemi.intensity = 0.15 + dayAmt * 0.65;
+    this.ambient.intensity = 0.2 + Math.min(1, nightAmt * 1.4) * 0.25;
   }
 
   // Ray from the current mouse position (normalized device coords) against

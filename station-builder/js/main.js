@@ -124,8 +124,16 @@ window.addEventListener('keydown', (e) => {
   if (mode === 'edit' && e.key === 'Escape') exitEditor();
 });
 
+const statTime = document.getElementById('stat-time');
+function formatTimeOfDay(hours) {
+  const h = Math.floor(hours) % 24;
+  const m = Math.floor((hours % 1) * 60);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 let lastT = performance.now();
 let kioskRevenueAccumulator = 0;
+let clockDisplayAccumulator = 0;
 function tick() {
   requestAnimationFrame(tick);
   const now = performance.now();
@@ -135,6 +143,13 @@ function tick() {
   kioskRevenueAccumulator += rawDt; // unclamped - tracks real elapsed time
   // even if rAF is throttled (e.g. a backgrounded tab), so revenue isn't
   // starved of the real time that actually passed.
+
+  sceneManager.updateDayNight(rawDt);
+  clockDisplayAccumulator += rawDt;
+  if (clockDisplayAccumulator >= 0.5) {
+    clockDisplayAccumulator = 0;
+    statTime.textContent = formatTimeOfDay(sceneManager.timeOfDay);
+  }
 
   if (mode === 'placement') {
     if (pointerOverCanvas) {

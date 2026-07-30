@@ -115,3 +115,35 @@ export const TIER_UPGRADE_COST_MULT = 1.15;
 // clock since this standalone tool doesn't have one.
 export const KIOSK_REVENUE_PER_HOUR = 180;
 export const KIOSK_REVENUE_TICK_SECONDS = 8;
+
+// ---------------- Architecture styles (Phase 7) ----------------
+
+// Selectable material palettes applied to a station's exterior shell,
+// independent of its type (transport mode still reads from the pad color
+// and type-specific silhouette) - picked at placement time, like tier/rotate.
+export const ARCHITECTURE_STYLES = [
+  {
+    id: 'modern', name: 'Modern Glass-Steel', icon: '🏙️',
+    wall: 0x8fa3ad, trim: 0x2c3e46, roof: 0x3b4a52, accent: 0x4fa0d9,
+    glass: 0x9fd6e8, glassOpacity: 0.5, metalness: 0.55, roughness: 0.3,
+  },
+  {
+    id: 'heritage', name: 'Heritage Brick', icon: '🧱',
+    wall: 0x8a4a35, trim: 0x3a2a20, roof: 0x4a3226, accent: 0xcfa646,
+    glass: 0xcfa646, glassOpacity: 0.35, metalness: 0.05, roughness: 0.85,
+  },
+  {
+    id: 'minimal', name: 'Minimal Concrete', icon: '⬜',
+    wall: 0xb7b4ac, trim: 0x8a877e, roof: 0x6e6b64, accent: 0xd8663d,
+    glass: 0xd8e4e8, glassOpacity: 0.4, metalness: 0.1, roughness: 0.9,
+  },
+  {
+    id: 'canopy', name: 'Glass Canopy', icon: '🪟',
+    wall: 0xaeb8c2, trim: 0x39424a, roof: 0xcfe4ec, accent: 0x6fc7e0,
+    glass: 0xbfe6f2, glassOpacity: 0.28, metalness: 0.35, roughness: 0.2,
+  },
+];
+
+export function architectureStyle(id) {
+  return ARCHITECTURE_STYLES.find(s => s.id === id) || ARCHITECTURE_STYLES[0];
+}

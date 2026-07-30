@@ -1,4 +1,4 @@
-import { SIZE_TIERS, STATION_TYPES, INTERIOR_OBJECTS } from './config.js';
+import { SIZE_TIERS, STATION_TYPES, INTERIOR_OBJECTS, ARCHITECTURE_STYLES } from './config.js';
 import { computeStats } from './statEngine.js';
 import { tierUpgradePlan } from './upgrades.js';
 import { saveTemplate, templatesForType, applyTemplate, deleteTemplate, templateFits } from './templates.js';
@@ -24,6 +24,7 @@ export class UI {
       hint: document.getElementById('hint-banner'),
       typeList: document.getElementById('type-list'),
       tierList: document.getElementById('tier-list'),
+      styleList: document.getElementById('style-list'),
       rotateBtn: document.getElementById('btn-rotate'),
       costLabel: document.getElementById('cost-label'),
       toastContainer: document.getElementById('toast-container'),
@@ -51,6 +52,7 @@ export class UI {
 
     this._renderTypePicker();
     this._renderTierPicker();
+    this._renderStylePicker();
     this.dom.rotateBtn.addEventListener('click', () => {
       this.placement.toggleRotate();
       this.refresh();
@@ -110,12 +112,26 @@ export class UI {
     }
   }
 
+  _renderStylePicker() {
+    this.dom.styleList.innerHTML = '';
+    for (const style of ARCHITECTURE_STYLES) {
+      const btn = el(`<button class="picker-btn" data-style="${style.id}" title="${style.name}">
+        <span class="picker-icon">${style.icon}</span><span>${style.name}</span>
+      </button>`);
+      btn.addEventListener('click', () => { this.placement.setStyle(style.id); this.refresh(); });
+      this.dom.styleList.appendChild(btn);
+    }
+  }
+
   refresh() {
     this.dom.typeList.querySelectorAll('[data-type]').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.type === this.placement.typeId);
     });
     this.dom.tierList.querySelectorAll('[data-tier]').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.tier === this.placement.tierId);
+    });
+    this.dom.styleList.querySelectorAll('[data-style]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.style === this.placement.styleId);
     });
     this.updateBudget();
     const cost = this.placement.currentCost();

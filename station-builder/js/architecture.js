@@ -1,12 +1,16 @@
 import * as THREE from 'three';
-import { tierIndex } from './config.js';
+import { tierIndex, architectureStyle } from './config.js';
 
 // Type-specific exterior building shapes for placed stations, replacing a
 // single flat-colored box with something that reads as the right kind of
 // structure: an open shelter for bus/tram stops, a subway entrance pavilion,
 // a gabled train shed for rail, a barrel-vaulted terminal for ferries, and a
 // larger tiered hall for multi-modal interchanges. Scales with size tier but
-// keeps the same silhouette family per type.
+// keeps the same silhouette family per type. The chosen architecture style
+// (see config.js) drives the actual material palette - wall/roof/trim/glass
+// colors and finish - independent of the type's silhouette, so a "Heritage
+// Brick" bus shelter and a "Heritage Brick" rail hall read as the same
+// building family even though their shapes differ.
 
 function darker(hex, amt = 0.3) {
   const c = new THREE.Color(hex);
@@ -14,9 +18,27 @@ function darker(hex, amt = 0.3) {
   return c;
 }
 
-function windowBand(w, d, h, y, color) {
+function wallMaterial(style) {
+  return new THREE.MeshStandardMaterial({ color: style.wall, roughness: style.roughness, metalness: style.metalness * 0.3 });
+}
+
+function accentMaterial(style, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color: style.accent, roughness: style.roughness * 0.7, metalness: style.metalness, ...opts });
+}
+
+// Real translucent glazing - used for window bands and canopies so the
+// chosen style's glass color/opacity actually reads as glass rather than a
+// flat painted stripe.
+function glassMaterial(style, opts = {}) {
+  return new THREE.MeshStandardMaterial({
+    color: style.glass, transparent: true, opacity: style.glassOpacity,
+    roughness: 0.2, metalness: style.metalness * 0.6, ...opts,
+  });
+}
+
+function windowBand(w, d, h, y, style) {
   const group = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: darker(color, 0.55), roughness: 0.3, metalness: 0.1 });
+  const mat = glassMaterial(style);
   const bandH = Math.min(0.9, h * 0.3);
   const front = new THREE.Mesh(new THREE.BoxGeometry(w * 0.96, bandH, 0.04), mat);
   front.position.set(0, y, d / 2 + 0.02);
@@ -30,11 +52,11 @@ function windowBand(w, d, h, y, color) {
 // A recessed dark opening with a lighter frame trim, standing in for an
 // actual entrance door instead of a flat painted-on rectangle. baseY lifts
 // it to sit on top of the plinth rather than being buried inside it.
-function doorway(w, h, z, baseY = 0.35) {
+function doorway(w, h, z, style, baseY = 0.35) {
   const group = new THREE.Group();
   const frame = new THREE.Mesh(
     new THREE.BoxGeometry(w * 1.15, h * 1.08, 0.06),
-    new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.5 }),
+    new THREE.MeshStandardMaterial({ color: style.trim, roughness: 0.5 }),
   );
   frame.position.set(0, baseY + h / 2, z);
   group.add(frame);
@@ -49,10 +71,10 @@ function doorway(w, h, z, baseY = 0.35) {
 
 // A slightly wider, darker foundation strip so the building looks grounded
 // rather than floating on the pad.
-function plinth(w, d, color) {
+function plinth(w, d, style) {
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(w * 1.04, 0.35, d * 1.04),
-    new THREE.MeshStandardMaterial({ color: darker(color, 0.45), roughness: 0.8 }),
+    new THREE.MeshStandardMaterial({ color: darker(style.wall, 0.45), roughness: Math.min(1, style.roughness + 0.1) }),
   );
   mesh.position.y = 0.175;
   mesh.receiveShadow = true;
@@ -87,11 +109,11 @@ function nameSign(text, w, y, z) {
 
 // Open-sided canopy shelter: bus/tram stops. Flat roof on corner posts,
 // no walls.
-function shelterShell(w, d, tier, name) {
+function shelterShell(w, d, tier, name, style) {
   const group = new THREE.Group();
   const roofH = 2.6 + tierIndex(tier) * 0.3;
-  const postMat = new THREE.MeshStandardMaterial({ color: 0x6b6f76 });
-  const roofMat = new THREE.MeshStandardMaterial({ color: 0xe6e9ee, roughness: 0.6 });
+  const postMat = new THREE.MeshStandardMaterial({ color: style.trim, metalness: style.metalness, roughness: 0.4 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: style.roof, roughness: style.roughness });
 
   const roof = new THREE.Mesh(new THREE.BoxGeometry(w, 0.12, d), roofMat);
   roof.position.set(0, roofH, 0);
@@ -100,7 +122,7 @@ function shelterShell(w, d, tier, name) {
   // A thin fascia trim along the roof's leading edge for a less slab-like top.
   const fascia = new THREE.Mesh(
     new THREE.BoxGeometry(w * 1.01, 0.14, 0.08),
-    new THREE.MeshStandardMaterial({ color: darker(0xe6e9ee, 0.2) }),
+    new THREE.MeshStandardMaterial({ color: darker(style.roof, 0.2) }),
   );
   fascia.position.set(0, roofH - 0.05, d / 2);
   group.add(fascia);
@@ -118,10 +140,7 @@ function shelterShell(w, d, tier, name) {
   }
 
   // A single glazed back panel so it reads as a shelter, not a table.
-  const backPanel = new THREE.Mesh(
-    new THREE.BoxGeometry(w * 0.94, roofH * 0.7, 0.06),
-    new THREE.MeshStandardMaterial({ color: 0xcfd6e0, transparent: true, opacity: 0.55 }),
-  );
+  const backPanel = new THREE.Mesh(new THREE.BoxGeometry(w * 0.94, roofH * 0.7, 0.06), glassMaterial(style));
   backPanel.position.set(0, roofH * 0.35, -d / 2 + 0.15);
   group.add(backPanel);
 
@@ -130,27 +149,26 @@ function shelterShell(w, d, tier, name) {
 }
 
 // Small entrance pavilion + descending stairwell suggestion: subway.
-function pavilionShell(w, d, tier, name) {
+function pavilionShell(w, d, tier, name, style) {
   const group = new THREE.Group();
   const h = 2.2 + tierIndex(tier) * 0.4;
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0xf2f2f0, roughness: 0.7 });
 
-  group.add(plinth(w * 0.58, d * 0.58, 0xf2f2f0));
+  group.add(plinth(w * 0.58, d * 0.58, style));
 
-  const body = new THREE.Mesh(new THREE.BoxGeometry(w * 0.55, h, d * 0.55), bodyMat);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(w * 0.55, h, d * 0.55), wallMaterial(style));
   body.position.set(0, h / 2 + 0.35, 0);
   body.castShadow = true;
   group.add(body);
 
   const canopy = new THREE.Mesh(
     new THREE.BoxGeometry(w * 0.65, 0.1, d * 0.65),
-    new THREE.MeshStandardMaterial({ color: 0xe0552b, emissive: 0x441100, emissiveIntensity: 0.3 }),
+    accentMaterial(style, { emissive: darker(style.accent, 0.7), emissiveIntensity: 0.3 }),
   );
   canopy.position.set(0, h + 0.45, 0);
   canopy.castShadow = true;
   group.add(canopy);
 
-  group.add(doorway(w * 0.28, h * 0.75, d * 0.275));
+  group.add(doorway(w * 0.28, h * 0.75, d * 0.275, style));
 
   // A dark sunken opening in front of the pavilion suggesting stairs down,
   // flanked by handrails.
@@ -167,25 +185,24 @@ function pavilionShell(w, d, tier, name) {
     group.add(rail);
   }
 
-  group.add(windowBand(w * 0.55, d * 0.55, h * 0.6, h * 0.55 + 0.35, 0x999999));
+  group.add(windowBand(w * 0.55, d * 0.55, h * 0.6, h * 0.55 + 0.35, style));
   group.add(nameSign(name, w * 0.65, h + 0.75, 0));
   return group;
 }
 
 // Gabled train-shed hall: rail stations.
-function gabledHall(w, d, tier, name) {
+function gabledHall(w, d, tier, name, style) {
   const group = new THREE.Group();
   const wallH = 3.2 + tierIndex(tier) * 1.2;
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0xede8df, roughness: 0.7 });
 
-  group.add(plinth(w * 0.72, d * 0.72, 0xede8df));
+  group.add(plinth(w * 0.72, d * 0.72, style));
 
-  const walls = new THREE.Mesh(new THREE.BoxGeometry(w * 0.72, wallH, d * 0.72), wallMat);
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w * 0.72, wallH, d * 0.72), wallMaterial(style));
   walls.position.set(0, wallH / 2 + 0.35, 0);
   walls.castShadow = true;
   group.add(walls);
 
-  const roofMat = new THREE.MeshStandardMaterial({ color: 0x6f5f4a, roughness: 0.55 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: style.roof, roughness: style.roughness });
   const ridgeRise = wallH * 0.45;
   const slopeLen = Math.sqrt((d * 0.72 / 2) ** 2 + ridgeRise ** 2);
   const angle = Math.atan2(ridgeRise, d * 0.72 / 2);
@@ -199,7 +216,7 @@ function gabledHall(w, d, tier, name) {
 
   // Visible roof trusses under the ridge, evenly spaced along the hall's
   // length, like a real train shed's structural frame.
-  const trussMat = new THREE.MeshStandardMaterial({ color: 0x3a3530, roughness: 0.6 });
+  const trussMat = new THREE.MeshStandardMaterial({ color: darker(style.trim, 0.1), roughness: 0.6 });
   const trussCount = Math.max(2, Math.round((w * 0.72) / 6));
   for (let i = 0; i < trussCount; i++) {
     const tx = -w * 0.36 + (w * 0.72) * ((i + 0.5) / trussCount);
@@ -211,21 +228,20 @@ function gabledHall(w, d, tier, name) {
     }
   }
 
-  group.add(doorway(w * 0.16, wallH * 0.55, d * 0.36 + 0.03));
-  group.add(windowBand(w * 0.72, d * 0.72, wallH * 0.6, wallH * 0.55 + 0.35, 0x8899aa));
+  group.add(doorway(w * 0.16, wallH * 0.55, d * 0.36 + 0.03, style));
+  group.add(windowBand(w * 0.72, d * 0.72, wallH * 0.6, wallH * 0.55 + 0.35, style));
   group.add(nameSign(name, w * 0.72, wallH + 0.9, d * 0.36 + 0.06));
   return group;
 }
 
 // Barrel-vaulted terminal hall: ferry terminals.
-function vaultedHall(w, d, tier, name) {
+function vaultedHall(w, d, tier, name, style) {
   const group = new THREE.Group();
   const wallH = 2.6 + tierIndex(tier) * 1.0;
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0xe8ecef, roughness: 0.65 });
 
-  group.add(plinth(w * 0.7, d * 0.7, 0xe8ecef));
+  group.add(plinth(w * 0.7, d * 0.7, style));
 
-  const walls = new THREE.Mesh(new THREE.BoxGeometry(w * 0.7, wallH, d * 0.7), wallMat);
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w * 0.7, wallH, d * 0.7), wallMaterial(style));
   walls.position.set(0, wallH / 2 + 0.35, 0);
   walls.castShadow = true;
   group.add(walls);
@@ -233,7 +249,7 @@ function vaultedHall(w, d, tier, name) {
   const vaultR = (w * 0.7) / 2;
   const vault = new THREE.Mesh(
     new THREE.CylinderGeometry(vaultR, vaultR, d * 0.72, 16, 1, true, 0, Math.PI),
-    new THREE.MeshStandardMaterial({ color: 0x3d6ea5, roughness: 0.4, metalness: 0.15, side: THREE.DoubleSide }),
+    accentMaterial(style, { side: THREE.DoubleSide }),
   );
   vault.rotation.z = Math.PI / 2;
   vault.rotation.y = Math.PI / 2;
@@ -242,7 +258,7 @@ function vaultedHall(w, d, tier, name) {
   group.add(vault);
 
   // Glazing ribs across the curved roof, evoking vault window bars.
-  const ribMat = new THREE.MeshStandardMaterial({ color: 0x1f3a52, roughness: 0.5 });
+  const ribMat = new THREE.MeshStandardMaterial({ color: darker(style.trim, 0.1), roughness: 0.5 });
   const ribCount = 6;
   for (let i = 1; i < ribCount; i++) {
     const t = i / ribCount;
@@ -255,42 +271,35 @@ function vaultedHall(w, d, tier, name) {
     group.add(rib);
   }
 
-  group.add(doorway(w * 0.16, wallH * 0.6, d * 0.35 + 0.03));
-  group.add(windowBand(w * 0.7, d * 0.7, wallH * 0.6, wallH * 0.5 + 0.35, 0x3d6ea5));
+  group.add(doorway(w * 0.16, wallH * 0.6, d * 0.35 + 0.03, style));
+  group.add(windowBand(w * 0.7, d * 0.7, wallH * 0.6, wallH * 0.5 + 0.35, style));
   group.add(nameSign(name, w * 0.7, wallH + 0.75, d * 0.35 + 0.06));
   return group;
 }
 
 // Larger tiered hall with a glass-canopy front overhang: interchanges.
-function interchangeHall(w, d, tier, name) {
+function interchangeHall(w, d, tier, name, style) {
   const group = new THREE.Group();
   const baseH = 3.6 + tierIndex(tier) * 1.4;
-  const baseMat = new THREE.MeshStandardMaterial({ color: 0xece6f2, roughness: 0.6 });
 
-  group.add(plinth(w * 0.75, d * 0.75, 0xece6f2));
+  group.add(plinth(w * 0.75, d * 0.75, style));
 
-  const base = new THREE.Mesh(new THREE.BoxGeometry(w * 0.75, baseH, d * 0.75), baseMat);
+  const base = new THREE.Mesh(new THREE.BoxGeometry(w * 0.75, baseH, d * 0.75), wallMaterial(style));
   base.position.set(0, baseH / 2 + 0.35, 0);
   base.castShadow = true;
   group.add(base);
 
   const upperH = baseH * 0.5;
-  const upper = new THREE.Mesh(
-    new THREE.BoxGeometry(w * 0.5, upperH, d * 0.5),
-    new THREE.MeshStandardMaterial({ color: 0xb98fd8, roughness: 0.5 }),
-  );
+  const upper = new THREE.Mesh(new THREE.BoxGeometry(w * 0.5, upperH, d * 0.5), accentMaterial(style));
   upper.position.set(0, baseH + 0.35 + upperH / 2, 0);
   upper.castShadow = true;
   group.add(upper);
 
-  const canopy = new THREE.Mesh(
-    new THREE.BoxGeometry(w * 0.85, 0.12, d * 0.3),
-    new THREE.MeshStandardMaterial({ color: 0xb98fd8, transparent: true, opacity: 0.6, roughness: 0.2 }),
-  );
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(w * 0.85, 0.12, d * 0.3), glassMaterial(style));
   canopy.position.set(0, baseH * 0.62 + 0.35, d * 0.75 / 2 + d * 0.12);
   group.add(canopy);
   // Canopy support struts.
-  const strutMat = new THREE.MeshStandardMaterial({ color: 0x6b6f76, metalness: 0.5, roughness: 0.4 });
+  const strutMat = new THREE.MeshStandardMaterial({ color: style.trim, metalness: 0.5, roughness: 0.4 });
   for (const side of [-1, 1]) {
     const strut = new THREE.Mesh(new THREE.BoxGeometry(0.06, baseH * 0.3, 0.06), strutMat);
     strut.position.set(side * w * 0.32, baseH * 0.47 + 0.35, d * 0.75 / 2 + d * 0.2);
@@ -298,8 +307,8 @@ function interchangeHall(w, d, tier, name) {
     group.add(strut);
   }
 
-  group.add(doorway(w * 0.2, baseH * 0.5, d * 0.375 + 0.03));
-  group.add(windowBand(w * 0.75, d * 0.75, baseH * 0.6, baseH * 0.55 + 0.35, 0xb98fd8));
+  group.add(doorway(w * 0.2, baseH * 0.5, d * 0.375 + 0.03, style));
+  group.add(windowBand(w * 0.75, d * 0.75, baseH * 0.6, baseH * 0.55 + 0.35, style));
   group.add(nameSign(name, w * 0.75, baseH + 0.9, d * 0.375 + 0.06));
   return group;
 }
@@ -316,7 +325,8 @@ const BUILDERS = {
 // Builds the exterior shell for a station of the given type/tier, sized to
 // its footprint (w, d in meters). Positioned local to origin (0,0,0) - the
 // caller places the returned group at the station's world (x,y,z).
-export function buildStationShell(typeId, tierId, footprintW, footprintD, name = '') {
+export function buildStationShell(typeId, tierId, footprintW, footprintD, name = '', styleId) {
   const builder = BUILDERS[typeId] || gabledHall;
-  return builder(footprintW, footprintD, tierId, name);
+  const style = architectureStyle(styleId);
+  return builder(footprintW, footprintD, tierId, name, style);
 }

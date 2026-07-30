@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import {
   CELL_SIZE, SIZE_TIERS, STATION_TYPES, stationType, ACCESS_TOLERANCE_CELLS,
+  ARCHITECTURE_STYLES, architectureStyle,
 } from './config.js';
 import { buildStationShell } from './architecture.js';
+import { buildLandscaping } from './landscaping.js';
 import { tierUpgradePlan, resizeLevelGrids } from './upgrades.js';
 
 const FEATURE_FOR_RULE = {
@@ -28,6 +30,7 @@ export class PlacementSystem {
 
     this.typeId = STATION_TYPES[0].id;
     this.tierId = SIZE_TIERS[0].id;
+    this.styleId = ARCHITECTURE_STYLES[0].id;
     this.rotated = false; // swaps w/d when true
 
     this.hover = null; // { x, z, w, d, valid, reason }
@@ -36,6 +39,7 @@ export class PlacementSystem {
 
   setType(id) { this.typeId = id; }
   setTier(id) { this.tierId = id; }
+  setStyle(id) { this.styleId = id; }
   toggleRotate() { this.rotated = !this.rotated; }
 
   get currentType() { return stationType(this.typeId); }
@@ -141,6 +145,7 @@ export class PlacementSystem {
       id: `st${_stationIdCounter++}`,
       typeId: type.id,
       tierId: tier.id,
+      styleId: this.styleId,
       name: `${type.name} ${_stationIdCounter - 1}`,
       x, z, w, d,
       rotated: this.rotated,
@@ -170,10 +175,18 @@ export class PlacementSystem {
 
     // Type-specific architecture (shelter/pavilion/hall) sized to the
     // footprint - see architecture.js.
-    const shell = buildStationShell(station.typeId, station.tierId, footprintW, footprintD, station.name);
+    const shell = buildStationShell(station.typeId, station.tierId, footprintW, footprintD, station.name, station.styleId);
     shell.position.set(worldX, 0.3, worldZ);
     shell.traverse(m => { if (m.isMesh) m.receiveShadow = true; });
     group.add(shell);
+
+    // Trees/benches/paving scattered around the pad - purely decorative,
+    // deterministic per station so it doesn't reshuffle on rebuilds.
+    const seed = parseInt(String(station.id).replace(/\D/g, ''), 10) || 1;
+    const landscaping = buildLandscaping(footprintW, footprintD, seed, architectureStyle(station.styleId));
+    landscaping.position.set(worldX, 0, worldZ);
+    landscaping.traverse(m => { if (m.isMesh) m.receiveShadow = true; });
+    group.add(landscaping);
 
     return group;
   }
