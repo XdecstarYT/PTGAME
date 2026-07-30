@@ -12,6 +12,7 @@ export function createDefaultBuildingDesign(footprintId) {
     footprintId: preset.id,
     cols: preset.cols,
     rows: preset.rows,
+    roofMaterialId: 'shingle',
     levels: [{ grid: createEmptyLevelGrid(preset.cols, preset.rows), wallMaterialId: 'concrete' }],
     voxels: [], // { x, y, z, materialId } in VOXEL_SIZE units - see buildingDefs.js
     thumbnail: null,

@@ -1,4 +1,4 @@
-import { FOOTPRINT_PRESETS, WALL_MATERIALS, BUILD_PIECES, MAX_LEVELS, VOXEL_MATERIALS, footprintPreset } from './buildingDefs.js';
+import { FOOTPRINT_PRESETS, WALL_MATERIALS, ROOF_MATERIALS, BUILD_PIECES, MAX_LEVELS, VOXEL_MATERIALS, footprintPreset } from './buildingDefs.js';
 import { createDefaultBuildingDesign, createEmptyLevelGrid, addVoxel, removeVoxelAt } from './buildingModel.js';
 import { worldPointToVoxelCoord } from './buildingMeshBuilder.js';
 import { BuildingScene } from './buildingScene.js';
@@ -178,6 +178,12 @@ export class BuildingEditor {
       </button>
     `).join('');
 
+    const roofButtons = ROOF_MATERIALS.map(m => `
+      <button class="material-swatch ${(design.roofMaterialId || 'shingle') === m.id ? 'active' : ''}" data-roof-material="${m.id}">
+        <span class="swatch-dot" style="background:#${m.color.toString(16).padStart(6, '0')}"></span>${m.label}
+      </button>
+    `).join('');
+
     const pieceButtons = BUILD_PIECES.map(p => `
       <button class="piece-brush ${this.brush === p.id ? 'active' : ''}" data-piece="${p.id}">${p.icon} ${p.name}</button>
     `).join('');
@@ -189,6 +195,8 @@ export class BuildingEditor {
       <div class="building-level-tabs">${levelTabs}${addLevelBtn}</div>
       <h4>Wall Material (this floor)</h4>
       <div class="material-swatch-row">${materialButtons}</div>
+      <h4>Roof Material (whole building)</h4>
+      <div class="material-swatch-row">${roofButtons}</div>
       <h4>Place</h4>
       <div class="piece-brush-row">${pieceButtons}</div>
       <canvas id="building-grid-canvas"></canvas>
@@ -215,6 +223,12 @@ export class BuildingEditor {
     this.dom.tabContent.querySelectorAll('[data-material]').forEach(btn => {
       btn.addEventListener('click', () => {
         this.design.levels[this.activeLevel].wallMaterialId = btn.dataset.material;
+        this._refreshAll();
+      });
+    });
+    this.dom.tabContent.querySelectorAll('[data-roof-material]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.design.roofMaterialId = btn.dataset.roofMaterial;
         this._refreshAll();
       });
     });

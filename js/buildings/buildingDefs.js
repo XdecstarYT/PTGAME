@@ -23,6 +23,18 @@ export const WALL_MATERIALS = [
 
 export function wallMaterial(id) { return WALL_MATERIALS.find(m => m.id === id) || WALL_MATERIALS[0]; }
 
+// A design-wide roof finish, independent of wall material - real buildings
+// almost always read their roof as a visually distinct surface rather than
+// a flat cap in the same color as the walls below it.
+export const ROOF_MATERIALS = [
+  { id: 'shingle', label: 'Asphalt Shingle', color: 0x3a3a3d, roughness: 0.9, metalness: 0.05 },
+  { id: 'tile', label: 'Terracotta Tile', color: 0xa8543a, roughness: 0.75, metalness: 0.05 },
+  { id: 'metal', label: 'Standing-Seam Metal', color: 0x9ea4ab, roughness: 0.35, metalness: 0.6 },
+  { id: 'membrane', label: 'Flat Membrane', color: 0x24262b, roughness: 0.95, metalness: 0 },
+];
+
+export function roofMaterial(id) { return ROOF_MATERIALS.find(m => m.id === id) || ROOF_MATERIALS[0]; }
+
 // category: 'structure' pieces fill a whole grid cell at the current floor's
 // wall height; 'floor' pieces are a thin slab; 'roof' pieces cap the top of
 // a building. walkable is reserved for a future interior-walkthrough mode.

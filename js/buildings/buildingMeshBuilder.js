@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BUILD_CELL_SIZE, LEVEL_HEIGHT_M, wallMaterial, VOXEL_SIZE, voxelMaterialDef } from './buildingDefs.js';
+import { BUILD_CELL_SIZE, LEVEL_HEIGHT_M, wallMaterial, roofMaterial, VOXEL_SIZE, voxelMaterialDef } from './buildingDefs.js';
 
 function cellCenterLocal(cols, rows, c, r) {
   return {
@@ -31,6 +31,10 @@ export function buildStructureMesh(design) {
       color: 0x9fd6e8, transparent: true, opacity: 0.5, roughness: 0.15, metalness: 0.2,
     }));
     const doorMat = cachedMat('door', () => new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.5 }));
+    const roofDef = roofMaterial(design.roofMaterialId);
+    const roofMat = cachedMat(`roof_${roofDef.id}`, () => new THREE.MeshStandardMaterial({
+      color: roofDef.color, roughness: roofDef.roughness, metalness: roofDef.metalness,
+    }));
 
     for (let r = 0; r < design.rows; r++) {
       for (let c = 0; c < design.cols; c++) {
@@ -47,18 +51,20 @@ export function buildStructureMesh(design) {
         } else if (id === 'window') {
           const frame = new THREE.Mesh(new THREE.BoxGeometry(cellSize, LEVEL_HEIGHT_M, cellSize * 0.92), mat);
           frame.position.set(x, baseY + LEVEL_HEIGHT_M / 2, z);
-          frame.castShadow = true;
+          frame.castShadow = true; frame.receiveShadow = true;
           group.add(frame);
           const pane = new THREE.Mesh(new THREE.BoxGeometry(cellSize * 0.8, LEVEL_HEIGHT_M * 0.6, 0.06), glassMat);
           pane.position.set(x, baseY + LEVEL_HEIGHT_M * 0.55, z);
+          pane.receiveShadow = true;
           group.add(pane);
         } else if (id === 'door') {
           const frame = new THREE.Mesh(new THREE.BoxGeometry(cellSize, LEVEL_HEIGHT_M, cellSize * 0.92), mat);
           frame.position.set(x, baseY + LEVEL_HEIGHT_M / 2, z);
-          frame.castShadow = true;
+          frame.castShadow = true; frame.receiveShadow = true;
           group.add(frame);
           const door = new THREE.Mesh(new THREE.BoxGeometry(cellSize * 0.55, LEVEL_HEIGHT_M * 0.75, 0.08), doorMat);
           door.position.set(x, baseY + LEVEL_HEIGHT_M * 0.375, z);
+          door.receiveShadow = true;
           group.add(door);
         } else if (id === 'floor') {
           const slab = new THREE.Mesh(new THREE.BoxGeometry(cellSize, 0.2, cellSize), mat);
@@ -66,7 +72,7 @@ export function buildStructureMesh(design) {
           slab.receiveShadow = true;
           group.add(slab);
         } else if (id === 'roof_flat') {
-          const slab = new THREE.Mesh(new THREE.BoxGeometry(cellSize, 0.25, cellSize), mat);
+          const slab = new THREE.Mesh(new THREE.BoxGeometry(cellSize, 0.25, cellSize), roofMat);
           slab.position.set(x, baseY + 0.125, z);
           slab.castShadow = true; slab.receiveShadow = true;
           group.add(slab);
@@ -79,9 +85,9 @@ export function buildStructureMesh(design) {
           const geo = new THREE.ExtrudeGeometry(shape, { depth: cellSize, bevelEnabled: false });
           geo.rotateX(-Math.PI / 2);
           geo.translate(0, 0, cellSize / 2);
-          const slope = new THREE.Mesh(geo, mat);
+          const slope = new THREE.Mesh(geo, roofMat);
           slope.position.set(x, baseY, z - cellSize / 2);
-          slope.castShadow = true;
+          slope.castShadow = true; slope.receiveShadow = true;
           group.add(slope);
         }
       }
