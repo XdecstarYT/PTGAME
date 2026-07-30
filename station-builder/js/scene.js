@@ -82,7 +82,10 @@ export class SceneManager {
   }
 
   render() {
-    this.controls.update();
+    // OrbitControls.update() unconditionally repositions the camera from its
+    // own internal state, regardless of .enabled - only skip it while walk
+    // mode (which drives the camera directly) has taken over.
+    if (this.controls.enabled) this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }
 }

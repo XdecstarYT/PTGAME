@@ -32,6 +32,7 @@ export class UI {
       editorPalette: document.getElementById('editor-palette'),
       editorStats: document.getElementById('editor-stats'),
       btnEditorBack: document.getElementById('btn-editor-back'),
+      walkHud: document.getElementById('walkmode-hud'),
     };
 
     this._renderTypePicker();
@@ -106,6 +107,9 @@ export class UI {
   hideEditor() {
     this.dom.editorOverlay.classList.add('hidden');
   }
+
+  showWalkHud() { this.dom.walkHud.classList.remove('hidden'); }
+  hideWalkHud() { this.dom.walkHud.classList.add('hidden'); }
 
   _renderPalette(layoutEditor) {
     this.dom.editorPalette.innerHTML = '<h3>Place</h3>';

@@ -55,10 +55,17 @@
         <button id="btn-editor-back" class="action-btn small">← Back to Map</button>
         <span id="editor-station-name">Station</span>
         <div id="editor-level-tabs"></div>
+        <button id="btn-walk-mode" class="action-btn small walk">🚶 Walk Mode</button>
       </div>
       <canvas id="layout-canvas"></canvas>
       <div id="editor-palette" class="hud"></div>
       <div id="editor-stats" class="hud"></div>
+    </div>
+
+    <!-- Walk mode: minimal HUD shown over the 3D viewport while walking -->
+    <div id="walkmode-hud" class="hud hidden">
+      <span id="walkmode-hint">WASD to move, mouse to look (click to lock cursor), E/Q to use stairs/escalators/elevators, Esc to exit.</span>
+      <button id="btn-walkmode-back" class="action-btn small">← Back to Editor</button>
     </div>
   </div>
 

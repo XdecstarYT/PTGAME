@@ -8,6 +8,8 @@ html, body {
 #app { position: relative; width: 100vw; height: 100vh; }
 #viewport { position: absolute; inset: 0; display: block; }
 
+.hidden { display: none !important; }
+
 .hud {
   position: absolute;
   background: rgba(14, 18, 26, 0.88);
@@ -80,7 +82,6 @@ html, body {
 #editor-overlay {
   position: absolute; inset: 0; background: #10131a; z-index: 100;
 }
-#editor-overlay.hidden { display: none; }
 
 #editor-topbar {
   top: 12px; left: 12px; right: 12px;
@@ -140,4 +141,13 @@ html, body {
 .warning-item {
   font-size: 12px; color: #ffb199; background: rgba(224, 112, 79, 0.12);
   border: 1px solid rgba(224, 112, 79, 0.3); border-radius: 6px; padding: 6px 8px;
+}
+
+.action-btn.walk { width: auto; margin: 0 0 0 auto; padding: 7px 12px; font-size: 12px; background: #2f4a34; }
+.action-btn.walk:hover { background: #3a5b40; }
+
+#walkmode-hud {
+  top: 12px; left: 50%; transform: translateX(-50%);
+  padding: 8px 16px; display: flex; align-items: center; gap: 16px;
+  font-size: 13px; color: #cfd6e2; white-space: nowrap;
 }
