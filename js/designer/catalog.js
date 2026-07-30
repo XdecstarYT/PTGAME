@@ -4,10 +4,14 @@ const STORAGE_KEY = 'ptgame_vehicle_catalog_v1';
 let _idCounter = 1;
 function nextId() { return `model_${Date.now().toString(36)}_${_idCounter++}`; }
 
+// Passenger models have a floor plan + door zones; freight models (kind:
+// 'freight', see freightModel.js) have neither - just a chassis/powertrain/
+// consist and a cargo bay whose capacity comes from the chassis itself.
 function isValidModelShape(m) {
-  return m && typeof m === 'object' && typeof m.chassisId === 'string'
-    && typeof m.powertrainId === 'string' && Array.isArray(m.floorPlan)
-    && Array.isArray(m.doorZonesActive) && typeof m.consistCars === 'number';
+  if (!m || typeof m !== 'object' || typeof m.chassisId !== 'string'
+    || typeof m.powertrainId !== 'string' || typeof m.consistCars !== 'number') return false;
+  if (m.kind === 'freight') return true;
+  return Array.isArray(m.floorPlan) && Array.isArray(m.doorZonesActive);
 }
 
 // Saved vehicle designs. Persisted to localStorage so a catalog survives a

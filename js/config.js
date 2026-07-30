@@ -94,3 +94,29 @@ export const MAX_TRANSFERS = 3;
 
 export const SUBSIDY_PER_RIDER = 0.5; // flat government top-up per completed trip, on top of fare
 export const COMBUSTION_POWERTRAINS = ['diesel', 'hybrid', 'hydrogen']; // affected by fuel price shocks
+
+// ---------------- Freight & cargo economy ----------------
+
+// Goods types a shipment can carry. valuePerTon is base revenue when
+// delivered on time; perishables also carry a spoilMinutes clock (see
+// cargo.js) that forfeits the shipment if it isn't delivered in time.
+export const CARGO_TYPES = {
+  raw_materials: { id: 'raw_materials', label: 'Raw Materials', icon: '🪨', valuePerTon: 18, sourceZone: 'industrial', sinkZone: 'industrial' },
+  manufactured_goods: { id: 'manufactured_goods', label: 'Manufactured Goods', icon: '📦', valuePerTon: 34, sourceZone: 'industrial', sinkZone: 'commercial' },
+  perishables: { id: 'perishables', label: 'Perishables', icon: '🥬', valuePerTon: 46, sourceZone: 'industrial', sinkZone: 'commercial', spoilMinutes: 480 },
+  retail_stock: { id: 'retail_stock', label: 'Retail Stock', icon: '🛍️', valuePerTon: 28, sourceZone: 'commercial', sinkZone: 'commercial' },
+};
+
+// Freight vehicle categories, parallel to VEHICLE_TYPES: trucks use the
+// same road graph as buses, freight rail shares tram track.
+export const FREIGHT_VEHICLE_TYPES = {
+  truck: { id: 'truck', label: 'Truck', needsTrack: false, needsTunnel: false, unlocked: true },
+  freight_rail: {
+    id: 'freight_rail', label: 'Freight Rail', needsTrack: true, trackCostPerTile: 20000,
+    needsTunnel: false, unlocked: false, unlockKey: 'freight_rail',
+  },
+};
+
+export const CARGO_DEPOT_COST = 60000;
+export const CARGO_DEPOT_MAINTENANCE_PER_DAY = 90;
+export const FREIGHT_SHIPMENT_SPAWN_RATE = 0.05; // shipments per industrial job-point per sim-day at full maturity
