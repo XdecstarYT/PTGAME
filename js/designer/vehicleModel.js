@@ -1,4 +1,4 @@
-import { chassisById } from './chassisDefs.js';
+import { chassisById, effectiveChassis } from './chassisDefs.js';
 import { powertrainById, powertrainsForCategory } from './powertrainDefs.js';
 import { checkCompliance, regulationById } from './regulations.js';
 import { FEATURE_DEFS, defaultFeatures, MAX_PRIORITY_SEATS, PRIORITY_SEAT_COMFORT_BONUS_EACH } from './featureDefs.js';
@@ -30,6 +30,9 @@ export function createDefaultModel(chassisId) {
     chassisId,
     powertrainId: powertrain.id,
     consistCars: 1,
+    customLengthUnits: chassis.lengthUnits,
+    customGridRows: chassis.gridRows,
+    customDoorCount: chassis.doorZones.length,
     aisleWidthCm: chassis.defaultAisleWidthCm,
     stepHeightCm: chassis.defaultStepHeightCm,
     doorZonesActive: chassis.doorZones.map(() => true),
@@ -73,7 +76,7 @@ export function checkAisleConnectivity(floorPlan) {
 
 // opts: { activeRegulationId, fareAssumption, ridershipAssumption }
 export function computeStats(model, opts = {}) {
-  const chassis = chassisById(model.chassisId);
+  const chassis = effectiveChassis(model);
   const powertrain = powertrainById(model.powertrainId);
 
   const seatCount = countCells(model.floorPlan, 'seat');

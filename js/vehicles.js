@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { KM_PER_WORLD_UNIT } from './config.js';
 import { buildExteriorMesh, applyWear } from './designer/vehicleMeshBuilder.js';
-import { chassisById } from './designer/chassisDefs.js';
+import { effectiveChassis } from './designer/chassisDefs.js';
 
 let _vId = 1;
 export function bumpVehicleIdCounter(n) { _vId = Math.max(_vId, n); }
@@ -48,7 +48,7 @@ export class VehicleSystem {
     while (route.vehicleIds.length < want) {
       const id = `veh${_vId++}`;
       const spacing = route.length > 0 ? (route.length / want) * route.vehicleIds.length : 0;
-      const chassis = chassisById(model.chassisId);
+      const chassis = effectiveChassis(model);
       const mesh = buildExteriorMesh(model, chassis);
       addCrowdingBar(mesh, mesh.userData.carHeight);
       this._group.add(mesh);
@@ -97,7 +97,7 @@ export class VehicleSystem {
   restoreVehicle(data, route) {
     const model = this.catalog?.get(data.modelId);
     if (!model) return null;
-    const chassis = chassisById(data.chassisId);
+    const chassis = effectiveChassis(model);
     const mesh = buildExteriorMesh(model, chassis);
     addCrowdingBar(mesh, mesh.userData.carHeight);
     this._group.add(mesh);

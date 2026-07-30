@@ -1,8 +1,8 @@
 import { VEHICLE_TYPES, DEFAULT_REGULATION_ID } from '../config.js';
-import { CHASSIS_DEFS, chassisById, chassisForCategory } from './chassisDefs.js';
+import { CHASSIS_DEFS, chassisById, chassisForCategory, effectiveChassis, maxDoorCountFor } from './chassisDefs.js';
 import { powertrainsForCategory, powertrainById } from './powertrainDefs.js';
 import { REGULATION_PRESETS, regulationById } from './regulations.js';
-import { createDefaultModel, computeStats } from './vehicleModel.js';
+import { createDefaultModel, createDefaultFloorPlan, computeStats } from './vehicleModel.js';
 import { FEATURE_DEFS, MAX_PRIORITY_SEATS } from './featureDefs.js';
 import { InteriorEditor } from './interiorEditor.js';
 import { DesignerScene } from './designerScene.js';
@@ -95,6 +95,10 @@ export class VehicleDesigner {
     for (const f of FEATURE_DEFS) if (this.model.features[f.id] === undefined) this.model.features[f.id] = false;
     if (this.model.features.prioritySeats === undefined) this.model.features.prioritySeats = 0;
     if (this.model.livery.operatorName === undefined) this.model.livery.operatorName = '';
+    const base = this._baseChassis();
+    if (this.model.customLengthUnits === undefined) this.model.customLengthUnits = base.lengthUnits;
+    if (this.model.customGridRows === undefined) this.model.customGridRows = base.gridRows;
+    if (this.model.customDoorCount === undefined) this.model.customDoorCount = base.doorZones.length;
   }
 
   switchTab(tab) {
@@ -103,7 +107,14 @@ export class VehicleDesigner {
     this._renderTab();
   }
 
-  _chassis() { return chassisById(this.model.chassisId); }
+  // The base preset the model started from - used for category/manufacturer/
+  // consist limits and the custom-dimension slider bounds, none of which
+  // change with the player's length/width/door sliders.
+  _baseChassis() { return chassisById(this.model.chassisId); }
+  // The base preset with the player's custom length/width/door-count sliders
+  // applied - this is "the chassis" everywhere stats/mesh/interior care about
+  // actual physical size (see chassisDefs.js's effectiveChassis).
+  _chassis() { return effectiveChassis(this.model); }
 
   _stats() {
     return computeStats(this.model, {
@@ -144,7 +155,9 @@ export class VehicleDesigner {
       return `<h4>${categoryLabel(cat)}${unlocked ? '' : ' 🔒 locked'}</h4><div class="chassis-card-row">${cards}</div>`;
     }).join('');
 
-    const powertrains = powertrainsForCategory(this._chassis().category).map(p => `
+    const base = this._baseChassis();
+    const eff = this._chassis();
+    const powertrains = powertrainsForCategory(eff.category).map(p => `
       <button class="action ${this.model.powertrainId === p.id ? '' : 'secondary'}" data-powertrain="${p.id}">${p.label}</button>
     `).join('');
 
@@ -152,6 +165,14 @@ export class VehicleDesigner {
       ${sections}
       <h4>Powertrain</h4>
       <div>${powertrains}</div>
+      <h4>Custom Dimensions</h4>
+      <div class="field"><label>Length: ${eff.lengthUnits}m (${base.minLengthUnits}-${base.maxLengthUnits}m)</label>
+        <input type="range" id="length-slider" min="${base.minLengthUnits}" max="${base.maxLengthUnits}" value="${eff.lengthUnits}"></div>
+      <div class="field"><label>Width (rows): ${eff.gridRows} (${base.minGridRows}-${base.maxGridRows})</label>
+        <input type="range" id="rows-slider" min="${base.minGridRows}" max="${base.maxGridRows}" value="${eff.gridRows}"></div>
+      <div class="field"><label>Doors: ${eff.doorZones.length} (1-${maxDoorCountFor(eff.lengthUnits)})</label>
+        <input type="range" id="doors-slider" min="1" max="${maxDoorCountFor(eff.lengthUnits)}" value="${eff.doorZones.length}"></div>
+      <p class="designer-hint">Bigger vehicles cost and run for more but carry proportionally more passengers - resizing regenerates the floor plan, so repaint seats/aisles afterward.</p>
     `;
 
     this.dom.tabContent.querySelectorAll('[data-chassis]').forEach(btn => {
@@ -161,6 +182,9 @@ export class VehicleDesigner {
         const sameCategory = newChassis.category === this._chassis().category;
         this.model.chassisId = newChassis.id;
         this.model.consistCars = Math.max(newChassis.minConsist, Math.min(newChassis.maxConsist, this.model.consistCars));
+        this.model.customLengthUnits = newChassis.lengthUnits;
+        this.model.customGridRows = newChassis.gridRows;
+        this.model.customDoorCount = newChassis.doorZones.length;
         this.model.aisleWidthCm = newChassis.defaultAisleWidthCm;
         this.model.stepHeightCm = newChassis.defaultStepHeightCm;
         this.model.doorZonesActive = newChassis.doorZones.map(() => true);
@@ -177,6 +201,30 @@ export class VehicleDesigner {
         this._refreshAll();
       });
     });
+    document.getElementById('length-slider').addEventListener('change', (e) => {
+      this.model.customLengthUnits = Number(e.target.value);
+      this._regenerateFloorPlanForCustomSize();
+      this._refreshAll();
+    });
+    document.getElementById('rows-slider').addEventListener('change', (e) => {
+      this.model.customGridRows = Number(e.target.value);
+      this._regenerateFloorPlanForCustomSize();
+      this._refreshAll();
+    });
+    document.getElementById('doors-slider').addEventListener('change', (e) => {
+      this.model.customDoorCount = Number(e.target.value);
+      this._regenerateFloorPlanForCustomSize();
+      this._refreshAll();
+    });
+  }
+
+  // Length/width/door-count changes resize the floor plan grid itself, so
+  // any previously-painted seats/aisles can't carry over meaningfully - the
+  // same "start fresh" tradeoff switching chassis entirely already has.
+  _regenerateFloorPlanForCustomSize() {
+    const eff = this._chassis();
+    this.model.floorPlan = createDefaultFloorPlan(eff);
+    this.model.doorZonesActive = eff.doorZones.map(() => true);
   }
 
   _tabInterior() {
