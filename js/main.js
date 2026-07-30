@@ -134,8 +134,8 @@ function fmtMoneyLocal(n) { return `$${Math.round(n).toLocaleString('en-US')}`; 
 document.getElementById('btn-save-load').addEventListener('click', openSaveLoadModal);
 
 const heatmapBtn = document.getElementById('btn-heatmap-toggle');
-const heatmapCycle = ['off', 'demand', 'crowding'];
-const heatmapLabels = { off: 'Off', demand: 'Demand', crowding: 'Crowding' };
+const heatmapCycle = ['off', 'demand', 'crowding', 'freight'];
+const heatmapLabels = { off: 'Off', demand: 'Demand', crowding: 'Crowding', freight: 'Freight' };
 heatmapBtn.addEventListener('click', () => {
   const next = heatmapCycle[(heatmapCycle.indexOf(schematicView.heatmapMode) + 1) % heatmapCycle.length];
   schematicView.setHeatmapMode(next);

@@ -50,6 +50,29 @@ export class SchematicView {
     return points.map(p => ({ tile: p.tile, intensity: p.val / maxVal }));
   }
 
+  // Uncovered industrial demand for freight pickup - the same "where should
+  // I build next" signal _demandHeatmapPoints gives for passenger stations,
+  // but scoped to industrial tiles and depot catchments instead.
+  _freightHeatmapPoints() {
+    if (!this.cargoSystem) return [];
+    const depots = [...this.cargoSystem.depots.values()];
+    const points = [];
+    let maxVal = 1;
+    for (let x = 0; x < this.city.size; x++) {
+      for (let z = 0; z < this.city.size; z++) {
+        const tile = this.city.tileAt(x, z);
+        if (!tile || tile.type !== ZONE.INDUSTRIAL) continue;
+        const val = this.city.effectiveJobs(tile);
+        if (val < 1) continue;
+        const covered = depots.some(d => Math.hypot(d.worldX - tile.worldX, d.worldZ - tile.worldZ) <= d.radius);
+        if (covered) continue;
+        points.push({ tile, val });
+        if (val > maxVal) maxVal = val;
+      }
+    }
+    return points.map(p => ({ tile: p.tile, intensity: p.val / maxVal }));
+  }
+
   _crowdingHeatmapRoutes() {
     const out = [];
     for (const route of this.network.routes.values()) {
@@ -68,6 +91,7 @@ export class SchematicView {
     this._heatmapCacheAt = now;
     if (this.heatmapMode === 'demand') this._heatmapCache = this._demandHeatmapPoints();
     else if (this.heatmapMode === 'crowding') this._heatmapCache = this._crowdingHeatmapRoutes();
+    else if (this.heatmapMode === 'freight') this._heatmapCache = this._freightHeatmapPoints();
     else this._heatmapCache = null;
   }
 
@@ -78,6 +102,13 @@ export class SchematicView {
       for (const { tile, intensity } of this._heatmapCache) {
         const [x, z] = this.worldToScreen(tile.worldX, tile.worldZ);
         ctx.fillStyle = `rgba(255,70,60,${0.12 + intensity * 0.55})`;
+        ctx.fillRect(x - size / 2, z - size / 2, size, size);
+      }
+    } else if (this.heatmapMode === 'freight') {
+      const size = 13 * this.scale;
+      for (const { tile, intensity } of this._heatmapCache) {
+        const [x, z] = this.worldToScreen(tile.worldX, tile.worldZ);
+        ctx.fillStyle = `rgba(217,160,102,${0.15 + intensity * 0.55})`;
         ctx.fillRect(x - size / 2, z - size / 2, size, size);
       }
     } else if (this.heatmapMode === 'crowding') {

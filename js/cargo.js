@@ -38,6 +38,23 @@ function pointAtDistance(path, dist) {
 // manufactured goods start life at an industrial tile).
 const SOURCEABLE_FROM_INDUSTRIAL = Object.values(CARGO_TYPES).filter(c => c.sourceZone === 'industrial');
 
+// Renders a depot's name onto a small canvas texture for its yard sign -
+// same low-fidelity-but-real technique the station builder's entrance
+// signs and the freight mesh builder's side decals use.
+function depotSignTexture(name) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 384; canvas.height = 96;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#1a1712';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#ffcc66';
+  ctx.font = 'bold 40px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(name || 'DEPOT').slice(0, 16).toUpperCase(), canvas.width / 2, canvas.height / 2);
+  return new THREE.CanvasTexture(canvas);
+}
+
 // Owns depots, shipments, and the trucks that haul them - the freight
 // equivalent of network.js (depots) + passengers.js (demand) + vehicles.js
 // (moving entities) rolled into one system, deliberately simpler than any of
@@ -109,24 +126,106 @@ export class CargoSystem {
     this.depots.delete(id);
   }
 
-  // Simple pole+box marker so a placed depot is visible on the map, in the
-  // same spirit as network.js's station pole+cap (a distinct amber box
-  // instead of a cylinder cap keeps depots visually distinguishable).
+  // A small freight yard - pavement pad, a corrugated warehouse with a
+  // loading-dock canopy, an office annex, yard lights, and a lit signpost
+  // with the depot's name - replacing the earlier placeholder pole+box
+  // marker with something that actually reads as an industrial yard.
   _buildDepotMarker(depot) {
     const group = new THREE.Group();
+
+    const padMat = new THREE.MeshStandardMaterial({ color: 0x51524f, roughness: 1 });
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(TILE_SIZE * 0.86, 0.12, TILE_SIZE * 0.86), padMat);
+    pad.position.y = 0.06;
+    pad.receiveShadow = true;
+    group.add(pad);
+
+    const warehouseMat = new THREE.MeshStandardMaterial({ color: 0x6b7580, roughness: 0.7, metalness: 0.15 });
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x3c414a, roughness: 0.6 });
+    const wh = { len: 6.4, h: 3.4, w: 4.6 };
+    const whX = -1.6;
+    const warehouse = new THREE.Mesh(new THREE.BoxGeometry(wh.len, wh.h, wh.w), warehouseMat);
+    warehouse.position.set(whX, wh.h / 2, 0);
+    warehouse.castShadow = true; warehouse.receiveShadow = true;
+    group.add(warehouse);
+    const roofCap = new THREE.Mesh(new THREE.BoxGeometry(wh.len * 1.02, 0.2, wh.w * 1.02), roofMat);
+    roofCap.position.set(whX, wh.h + 0.1, 0);
+    roofCap.castShadow = true;
+    group.add(roofCap);
+
+    // Roll-up bay door facing the yard's +X apron.
+    const bayDoorMat = new THREE.MeshStandardMaterial({ color: 0x24262b, roughness: 0.6 });
+    const bayDoor = new THREE.Mesh(new THREE.BoxGeometry(0.08, wh.h * 0.7, wh.w * 0.5), bayDoorMat);
+    bayDoor.position.set(whX + wh.len / 2 + 0.02, wh.h * 0.35, 0);
+    group.add(bayDoor);
+
+    // Loading-dock canopy over the bay door.
+    const canopyMat = new THREE.MeshStandardMaterial({ color: 0xd9a066, roughness: 0.6 });
+    const canopy = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.12, wh.w * 0.7), canopyMat);
+    canopy.position.set(whX + wh.len / 2 + 0.8, wh.h * 0.68, 0);
+    canopy.castShadow = true;
+    group.add(canopy);
     const poleMat = new THREE.MeshStandardMaterial({ color: 0x2c2a33 });
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 2.6, 8), poleMat);
-    pole.position.y = 1.3;
-    pole.castShadow = true;
-    group.add(pole);
-    const boxMat = new THREE.MeshStandardMaterial({ color: 0xd9a066, emissive: 0xd9a066, emissiveIntensity: 0.2 });
-    const box = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.4, 2.2), boxMat);
-    box.position.y = 3.3;
-    box.castShadow = true;
-    group.add(box);
+    for (const pz of [-wh.w * 0.32, wh.w * 0.32]) {
+      const support = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, wh.h * 0.68, 8), poleMat);
+      support.position.set(whX + wh.len / 2 + 1.5, wh.h * 0.34, pz);
+      group.add(support);
+    }
+
+    // Office annex tucked at the warehouse's rear corner.
+    const officeMat = new THREE.MeshStandardMaterial({ color: 0xd9cbb0, roughness: 0.8 });
+    const office = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.1, 2.0), officeMat);
+    office.position.set(whX - wh.len / 2 - 0.9, 1.05, wh.w / 2 - 1.0);
+    office.castShadow = true; office.receiveShadow = true;
+    group.add(office);
+    const officeWindowMat = new THREE.MeshStandardMaterial({ color: 0x0c1420, roughness: 0.3, emissive: 0xffdb8a, emissiveIntensity: 0.15 });
+    const officeWindow = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.7, 1.2), officeWindowMat);
+    officeWindow.position.set(whX - wh.len / 2 - 0.9 + 0.9, 1.2, wh.w / 2 - 1.0);
+    group.add(officeWindow);
+
+    // Yard lights at two pad corners.
+    const lampGlowMat = new THREE.MeshStandardMaterial({ color: 0xfff2c0, emissive: 0xfff2c0, emissiveIntensity: 0.7 });
+    for (const [lx, lz] of [[TILE_SIZE * 0.36, TILE_SIZE * 0.36], [TILE_SIZE * 0.36, -TILE_SIZE * 0.36]]) {
+      const lampPole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 3.2, 8), poleMat);
+      lampPole.position.set(lx, 1.6, lz);
+      lampPole.castShadow = true;
+      group.add(lampPole);
+      const lampHead = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), lampGlowMat);
+      lampHead.position.set(lx, 3.25, lz);
+      group.add(lampHead);
+    }
+
+    // Lit signpost with the depot's name - keeps depots identifiable from a
+    // distance the way the old amber beacon box was, but actually legible.
+    const signPole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 2.6, 8), poleMat);
+    signPole.position.set(TILE_SIZE * 0.34, 1.3, 0);
+    signPole.castShadow = true;
+    group.add(signPole);
+    const signTex = depotSignTexture(depot.name);
+    const signBoard = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.4, 0.6),
+      new THREE.MeshStandardMaterial({ map: signTex, emissive: 0xffffff, emissiveMap: signTex, emissiveIntensity: 0.5 }),
+    );
+    signBoard.position.set(TILE_SIZE * 0.34, 2.75, 0);
+    signBoard.rotation.y = Math.PI / 2;
+    signBoard.userData.isDepotSign = true;
+    group.add(signBoard);
+
     group.position.set(depot.worldX, 0, depot.worldZ);
     this._group.add(group);
     depot._marker = group;
+  }
+
+  // Keeps the yard signpost's name texture in sync when a depot is renamed.
+  _refreshDepotSign(depot) {
+    if (!depot._marker) return;
+    depot._marker.traverse(o => {
+      if (!o.userData.isDepotSign) return;
+      o.material.map?.dispose();
+      const tex = depotSignTexture(depot.name);
+      o.material.map = tex;
+      o.material.emissiveMap = tex;
+      o.material.needsUpdate = true;
+    });
   }
 
   // Rebuilds a previously-paid-for depot from save data - no cost, no

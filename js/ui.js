@@ -480,6 +480,7 @@ export class UIController {
     panel.querySelector('#depot-name')?.addEventListener('change', (e) => {
       depot.name = e.target.value || depot.name;
       this.dom.panelTitle.textContent = depot.name;
+      this.cargoSystem._refreshDepotSign(depot);
     });
     panel.querySelector('#depot-delete')?.addEventListener('click', () => this.deleteDepot(depot.id));
     panel.querySelector('#depot-assign')?.addEventListener('click', () => {
