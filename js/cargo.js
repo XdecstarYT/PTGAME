@@ -52,6 +52,7 @@ export class CargoSystem {
     this.trucks = new Map();
     this.deliveredCount = 0;
     this.spoiledCount = 0;
+    this.deliveredTonsByType = {}; // cargoTypeId -> cumulative tons delivered, for shippingContracts.js
     this._spawnAccum = new Map(); // depotId -> fractional accumulator
     this._group = null;
   }
@@ -193,6 +194,7 @@ export class CargoSystem {
     this._spawnAccum.clear();
     this.deliveredCount = 0;
     this.spoiledCount = 0;
+    this.deliveredTonsByType = {};
   }
 
   // ---------------- shipment demand ----------------
@@ -373,6 +375,7 @@ export class CargoSystem {
       shipment.state = 'delivered';
       this.shipments.delete(shipment.id);
       this.deliveredCount++;
+      this.deliveredTonsByType[shipment.cargoTypeId] = (this.deliveredTonsByType[shipment.cargoTypeId] || 0) + shipment.tons;
     }
     truck.depotId = shipment ? shipment.destDepotId : truck.depotId;
     truck.state = 'idle';

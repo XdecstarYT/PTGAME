@@ -17,6 +17,7 @@ import { NewsTicker } from './newsTicker.js';
 import { AudioSystem } from './audio.js';
 import { SaveLoadSystem } from './saveLoad.js';
 import { CargoSystem, bumpCargoIdCounter } from './cargo.js';
+import { ShippingContractSystem } from './shippingContracts.js';
 import { allScenarios, exportScenario, importScenarioFromFile, deleteCustomScenario } from './scenarios.js';
 
 const canvas = document.getElementById('viewport');
@@ -67,6 +68,9 @@ ui.setEventSystem(eventSystem);
 const contractSystem = new ContractSystem({ city, network, economy, passengerSystem, ui });
 ui.setContractSystem(contractSystem);
 
+const shippingContractSystem = new ShippingContractSystem({ cargoSystem, economy, ui });
+ui.setShippingContractSystem(shippingContractSystem);
+
 const newsTicker = new NewsTicker({
   el: document.getElementById('news-ticker-text'),
   network, economy, passengerSystem, vehicleSystem, catalog,
@@ -74,7 +78,7 @@ const newsTicker = new NewsTicker({
 
 const saveLoadSystem = new SaveLoadSystem({
   city, network, vehicleSystem, economy, timeSystem, eventSystem, contractSystem, staffing, ui, schematicView,
-  cargoSystem,
+  cargoSystem, shippingContractSystem,
 });
 
 function fmtWhen(ts) {
@@ -240,6 +244,7 @@ timeSystem.on('newDay', (newDay) => {
   contractSystem.onNewDay(newDay);
   staffing.onNewDay(network);
   cargoSystem.onNewDay();
+  shippingContractSystem.onNewDay(newDay);
 
   const last = economy.history[economy.history.length - 1];
   if (last) ui.showDayToast(endedDay, last);

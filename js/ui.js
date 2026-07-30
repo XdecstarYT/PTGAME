@@ -176,20 +176,33 @@ export class UIController {
     const n = this.eventSystem?.active.length || 0;
     this.dom.disruptionBadge.textContent = String(n);
     this.dom.disruptionBadge.classList.toggle('hidden', n === 0);
-    const c = this.contractSystem?.active.length || 0;
+    const c = (this.contractSystem?.active.length || 0) + (this.shippingContractSystem?.active.length || 0);
     this.dom.contractBadge.textContent = String(c);
     this.dom.contractBadge.classList.toggle('hidden', c === 0);
   }
 
+  setShippingContractSystem(scs) { this.shippingContractSystem = scs; }
+
   openContractsModal() {
-    const contracts = this.contractSystem?.active || [];
     const day = this.timeSystem.day;
-    const rows = contracts.map(c => {
+    const rowFor = (c) => {
       const daysLeft = Math.max(0, c.expiresAtDay - day);
       return `<div class="disruption-item"><span>${c.label}<br><span style="font-size:11px">Reward ${fmtMoney(c.reward)} · Penalty ${fmtMoney(c.penalty)}</span></span><span class="days-left">${daysLeft}d left</span></div>`;
-    }).join('') || '<p>No active contracts right now - check back after a day passes.</p>';
+    };
+    const contracts = this.contractSystem?.active || [];
+    const rows = contracts.map(rowFor).join('') || '<p>No active contracts right now - check back after a day passes.</p>';
     const completed = this.contractSystem?.completedCount || 0;
-    this.openModal('Council Contracts', `${rows}<p style="margin-top:10px;font-size:11px">Completed all-time: ${completed}</p>`);
+
+    const shipping = this.shippingContractSystem?.active || [];
+    const shippingRows = shipping.map(rowFor).join('') || '<p>No active shipping contracts right now - build a cargo depot to start receiving them.</p>';
+    const shippingCompleted = this.shippingContractSystem?.completedCount || 0;
+
+    this.openModal('Contracts', `
+      <h4>Council Contracts</h4>
+      ${rows}<p style="margin-top:10px;font-size:11px">Completed all-time: ${completed}</p>
+      <h4 style="margin-top:16px">Shipping Contracts</h4>
+      ${shippingRows}<p style="margin-top:10px;font-size:11px">Completed all-time: ${shippingCompleted}</p>
+    `);
   }
 
   openDisruptionsModal() {

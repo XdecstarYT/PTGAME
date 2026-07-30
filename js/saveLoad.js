@@ -20,7 +20,10 @@ function maxNumericSuffix(ids) {
 // naturally within moments of resuming, which is a lot simpler than trying
 // to serialize mid-walk/mid-ride passenger state.
 export class SaveLoadSystem {
-  constructor({ city, network, vehicleSystem, economy, timeSystem, eventSystem, contractSystem, staffing, ui, schematicView, cargoSystem }) {
+  constructor({
+    city, network, vehicleSystem, economy, timeSystem, eventSystem, contractSystem, staffing, ui, schematicView,
+    cargoSystem, shippingContractSystem,
+  }) {
     this.city = city;
     this.network = network;
     this.vehicleSystem = vehicleSystem;
@@ -32,6 +35,7 @@ export class SaveLoadSystem {
     this.ui = ui;
     this.schematicView = schematicView;
     this.cargoSystem = cargoSystem;
+    this.shippingContractSystem = shippingContractSystem;
   }
 
   listSlots() {
@@ -101,6 +105,10 @@ export class SaveLoadSystem {
         id: d.id, name: d.name, x: d.x, z: d.z, roadTile: d.roadTile,
         modelId: d.modelId, truckCount: d.truckCount, stats: d.stats,
       })),
+      deliveredTonsByType: this.cargoSystem.deliveredTonsByType,
+      cargoDeliveredCount: this.cargoSystem.deliveredCount,
+      shippingContracts: this.shippingContractSystem.serialize(),
+      shippingContractsCompleted: this.shippingContractSystem.completedCount,
     };
   }
 
@@ -131,10 +139,14 @@ export class SaveLoadSystem {
 
     this.cargoSystem.resetAll();
     for (const d of data.depots || []) this.cargoSystem.restoreDepot(d);
+    this.cargoSystem.deliveredTonsByType = data.deliveredTonsByType || {};
+    this.cargoSystem.deliveredCount = data.cargoDeliveredCount || 0;
 
     this.eventSystem.rehydrate(data.events);
     this.contractSystem.rehydrate(data.contracts);
     this.contractSystem.completedCount = data.contractsCompleted || 0;
+    this.shippingContractSystem.rehydrate(data.shippingContracts);
+    this.shippingContractSystem.completedCount = data.shippingContractsCompleted || 0;
 
     bumpIdCounter(maxNumericSuffix([...(data.stations || []), ...(data.routes || [])].map(x => x.id)));
     bumpVehicleIdCounter(maxNumericSuffix((data.vehicles || []).map(v => v.id)));
