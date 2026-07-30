@@ -3,6 +3,7 @@ import {
   CELL_SIZE, SIZE_TIERS, STATION_TYPES, stationType, ACCESS_TOLERANCE_CELLS,
 } from './config.js';
 import { buildStationShell } from './architecture.js';
+import { tierUpgradePlan, resizeLevelGrids } from './upgrades.js';
 
 const FEATURE_FOR_RULE = {
   road: ['road'],
@@ -84,14 +85,24 @@ export class PlacementSystem {
     this.ghostMesh.visible = true;
   }
 
-  _validate(gx, gz, w, d) {
+  // Bounds + overlap check shared by fresh placement and tier upgrades
+  // (which pass the upgrading station's own id to exclude it from the
+  // overlap check against itself).
+  _footprintClear(gx, gz, w, d, excludeId = null) {
     if (gx < 0 || gz < 0 || gx + w > this.world.size || gz + d > this.world.size) {
       return { valid: false, reason: 'Footprint extends outside the map.' };
     }
     for (const s of this.stations) {
+      if (s.id === excludeId) continue;
       const overlap = gx < s.x + s.w && gx + w > s.x && gz < s.z + s.d && gz + d > s.z;
       if (overlap) return { valid: false, reason: 'Overlaps an existing station.' };
     }
+    return { valid: true, reason: null };
+  }
+
+  _validate(gx, gz, w, d) {
+    const bounds = this._footprintClear(gx, gz, w, d);
+    if (!bounds.valid) return bounds;
     const type = this.currentType;
     const features = FEATURE_FOR_RULE[type.accessRule] || [];
     let nearestDist = Infinity;
@@ -165,6 +176,32 @@ export class PlacementSystem {
     group.add(shell);
 
     return group;
+  }
+
+  // Grows a station in place to the next size tier: bigger footprint (kept
+  // anchored at the same corner), bigger exterior mesh, and every level's
+  // interior grid expanded to match (existing layout preserved, see
+  // resizeLevelGrids). Rejects if there's no room to grow into.
+  upgradeStation(station) {
+    const plan = tierUpgradePlan(station);
+    if (!plan) return { ok: false, reason: 'Already at the largest size tier.' };
+    if (this.economy.budget < plan.cost) {
+      return { ok: false, reason: `Not enough budget to upgrade (need $${plan.cost.toLocaleString()}).` };
+    }
+    const clear = this._footprintClear(station.x, station.z, plan.newW, plan.newD, station.id);
+    if (!clear.valid) {
+      return { ok: false, reason: `Not enough clear space to expand - ${clear.reason.toLowerCase()}` };
+    }
+
+    this.economy.budget -= plan.cost;
+    this.scene.remove(station.mesh);
+    station.w = plan.newW;
+    station.d = plan.newD;
+    station.tierId = plan.next.id;
+    resizeLevelGrids(station);
+    station.mesh = this._buildStationMesh(station);
+    this.scene.add(station.mesh);
+    return { ok: true, cost: plan.cost, newTierName: plan.next.name };
   }
 
   removeStation(id) {

@@ -5,7 +5,8 @@ import { PlacementSystem } from './placement.js';
 import { LayoutEditor } from './layoutEditor.js';
 import { WalkController } from './walkMode.js';
 import { UI } from './ui.js';
-import { STARTING_BUDGET } from './config.js';
+import { STARTING_BUDGET, KIOSK_REVENUE_TICK_SECONDS } from './config.js';
+import { kioskRevenueForStations } from './upgrades.js';
 
 const canvas = document.getElementById('viewport');
 const sceneManager = new SceneManager(canvas);
@@ -124,11 +125,16 @@ window.addEventListener('keydown', (e) => {
 });
 
 let lastT = performance.now();
+let kioskRevenueAccumulator = 0;
 function tick() {
   requestAnimationFrame(tick);
   const now = performance.now();
-  const dt = Math.min(0.1, (now - lastT) / 1000);
+  const rawDt = (now - lastT) / 1000;
+  const dt = Math.min(0.1, rawDt); // clamped for movement stability only
   lastT = now;
+  kioskRevenueAccumulator += rawDt; // unclamped - tracks real elapsed time
+  // even if rAF is throttled (e.g. a backgrounded tab), so revenue isn't
+  // starved of the real time that actually passed.
 
   if (mode === 'placement') {
     if (pointerOverCanvas) {
@@ -145,6 +151,18 @@ function tick() {
   } else if (mode === 'walk') {
     walkController.update(dt);
   }
+
+  if (kioskRevenueAccumulator >= KIOSK_REVENUE_TICK_SECONDS) {
+    const interval = kioskRevenueAccumulator;
+    kioskRevenueAccumulator = 0;
+    const revenue = kioskRevenueForStations(placement.stations, interval);
+    if (revenue > 0) {
+      economy.budget += revenue;
+      ui.updateBudget();
+      if (mode === 'edit' && editingStation) ui.refreshEditorStats(editingStation);
+    }
+  }
+
   sceneManager.render();
 }
 tick();

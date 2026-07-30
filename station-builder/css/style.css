@@ -150,6 +150,8 @@ html, body {
 
 .action-btn.walk { width: auto; margin: 0 0 0 auto; padding: 7px 12px; font-size: 12px; background: #2f4a34; }
 .action-btn.walk:hover { background: #3a5b40; }
+.action-btn.upgrade { width: auto; margin: 0; padding: 7px 12px; font-size: 12px; background: #4a3a6b; white-space: nowrap; }
+.action-btn.upgrade:hover { background: #5b4a80; }
 
 #walkmode-hud {
   top: 12px; left: 50%; transform: translateX(-50%);

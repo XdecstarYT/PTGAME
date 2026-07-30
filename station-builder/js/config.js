@@ -101,3 +101,17 @@ export const REQUIRED_PLATFORM_LENGTH_M = {
 // Cost (per footprint cell, i.e. per CELL_SIZE x CELL_SIZE area) to unlock
 // each additional level beyond the first, up to the tier's maxLevels.
 export const LEVEL_COST_PER_CELL = 500;
+
+// ---------------- Expansion & upgrades (Phase 5) ----------------
+
+// Upgrading to the next size tier costs this multiplier on top of the
+// station type's normal per-cell rate, applied only to the NEW footprint
+// area gained (existing footprint is already paid for).
+export const TIER_UPGRADE_COST_MULT = 1.15;
+
+// Passive kiosk revenue: base $/hour per kiosk cell at "on target" capacity,
+// scaled by how close the station's current capacity is to its tier target
+// (see upgrades.js). Credited on a real-time tick, not tied to a day/night
+// clock since this standalone tool doesn't have one.
+export const KIOSK_REVENUE_PER_HOUR = 180;
+export const KIOSK_REVENUE_TICK_SECONDS = 8;

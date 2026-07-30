@@ -1,5 +1,6 @@
 import { SIZE_TIERS, STATION_TYPES, INTERIOR_OBJECTS } from './config.js';
 import { computeStats } from './statEngine.js';
+import { tierUpgradePlan } from './upgrades.js';
 
 function el(html) {
   const t = document.createElement('template');
@@ -33,6 +34,7 @@ export class UI {
       editorStats: document.getElementById('editor-stats'),
       btnEditorBack: document.getElementById('btn-editor-back'),
       walkHud: document.getElementById('walkmode-hud'),
+      btnUpgradeTier: document.getElementById('btn-upgrade-tier'),
     };
 
     this._renderTypePicker();
@@ -41,8 +43,28 @@ export class UI {
       this.placement.toggleRotate();
       this.refresh();
     });
+    this.dom.btnUpgradeTier.addEventListener('click', () => this._onUpgradeClick());
 
     this.refresh();
+  }
+
+  _onUpgradeClick() {
+    const station = this._currentStation;
+    if (!station) return;
+    const result = this.placement.upgradeStation(station);
+    if (!result.ok) { this.showToast(result.reason, true); return; }
+    this.showToast(`Upgraded to ${result.newTierName} (${fmtMoney(result.cost)})`);
+    this._currentLayoutEditor?.render();
+    this._renderLevelTabs(station, this._currentLayoutEditor);
+    this.refreshEditorStats(station);
+  }
+
+  _refreshUpgradeButton(station) {
+    const plan = tierUpgradePlan(station);
+    if (!plan) { this.dom.btnUpgradeTier.classList.add('hidden'); return; }
+    this.dom.btnUpgradeTier.classList.remove('hidden');
+    this.dom.btnUpgradeTier.textContent = `⬆️ Upgrade to ${plan.next.name} (${fmtMoney(plan.cost)})`;
+    this.dom.btnUpgradeTier.disabled = this.economy.budget < plan.cost;
   }
 
   _renderTypePicker() {
@@ -97,6 +119,8 @@ export class UI {
   // ---------------- layout editor panel ----------------
 
   showEditor(station, layoutEditor) {
+    this._currentStation = station;
+    this._currentLayoutEditor = layoutEditor;
     this.dom.editorOverlay.classList.remove('hidden');
     this.dom.editorStationName.textContent = `${station.name} (${STATION_TYPES.find(t => t.id === station.typeId).name})`;
     this._renderPalette(layoutEditor);
@@ -173,6 +197,7 @@ export class UI {
 
   refreshEditorStats(station) {
     this.updateBudget();
+    this._refreshUpgradeButton(station);
     const s = computeStats(station);
     const row = (label, val, cls = '') => `<div class="stat-row"><span>${label}</span><span class="stat-val ${cls}">${val}</span></div>`;
     let html = '<h3>Live Stats</h3>';
