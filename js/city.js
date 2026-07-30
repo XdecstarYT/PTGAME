@@ -346,6 +346,11 @@ export class City {
     // buildings for zoned tiles
     const buildingTypes = [ZONE.RESIDENTIAL, ZONE.COMMERCIAL, ZONE.INDUSTRIAL, ZONE.LANDMARK];
     const geo = new THREE.BoxGeometry(1, 1, 1);
+    const roofBoxGeo = new THREE.BoxGeometry(1, 1, 1);
+    const roofConeGeo = new THREE.ConeGeometry(0.5, 1, 6);
+    const windowGeo = new THREE.BoxGeometry(1, 1, 1);
+    this._windowMats = [];
+
     for (const type of buildingTypes) {
       const tiles = (byType[type] || []);
       if (!tiles.length) continue;
@@ -354,9 +359,24 @@ export class City {
       const mesh = new THREE.InstancedMesh(geo, mat, tiles.length);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
+
+      const roofMat = new THREE.MeshStandardMaterial({ color, roughness: 0.7, flatShading: true });
+      roofMat.color.multiplyScalar(0.8);
+      const roofGeo = type === ZONE.LANDMARK ? roofConeGeo : roofBoxGeo;
+      const roofMesh = new THREE.InstancedMesh(roofGeo, roofMat, tiles.length);
+      roofMesh.castShadow = true;
+
+      const windowMat = new THREE.MeshStandardMaterial({
+        color: 0x0c1420, roughness: 0.3, metalness: 0.2,
+        emissive: 0xffdb8a, emissiveIntensity: 0,
+      });
+      this._windowMats.push(windowMat);
+      const windowMesh = new THREE.InstancedMesh(windowGeo, windowMat, tiles.length);
+
       const m = new THREE.Matrix4();
       const q = new THREE.Quaternion();
       const s = new THREE.Vector3();
+      const jitterColor = new THREE.Color();
       tiles.forEach((t, i) => {
         const block = this.blocks.get(t.blockId);
         const maturity = block ? block.maturity : 1;
@@ -370,15 +390,64 @@ export class City {
         const footprint = TILE_SIZE * (0.42 + t.seed * 0.18);
         const jitterX = (t.seed - 0.5) * TILE_SIZE * 0.25;
         const jitterZ = ((t.seed * 7) % 1 - 0.5) * TILE_SIZE * 0.25;
+        const rotY = t.seed * Math.PI * 0.5;
+        const cx = t.worldX + jitterX, cz = t.worldZ + jitterZ;
+
         s.set(footprint, h, footprint);
-        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), t.seed * Math.PI * 0.5);
-        m.compose(new THREE.Vector3(t.worldX + jitterX, h / 2, t.worldZ + jitterZ), q, s);
+        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotY);
+        m.compose(new THREE.Vector3(cx, h / 2, cz), q, s);
         mesh.setMatrixAt(i, m);
+
+        // Subtle per-building tint so a whole zone isn't one flat color.
+        const tintAmt = ((t.seed * 13) % 1 - 0.5) * 0.3;
+        jitterColor.setScalar(1 + tintAmt);
+        mesh.setColorAt(i, jitterColor);
+
+        // Roof cap - shape/proportions vary by zone type for a distinct
+        // per-type roofline silhouette instead of a flat-topped box.
+        if (type === ZONE.LANDMARK) {
+          const spireH = h * 0.35;
+          s.set(footprint * 0.55, spireH, footprint * 0.55);
+          m.compose(new THREE.Vector3(cx, h + spireH / 2, cz), q, s);
+        } else if (type === ZONE.COMMERCIAL) {
+          const tierH = h * 0.16;
+          s.set(footprint * 0.55, tierH, footprint * 0.55);
+          m.compose(new THREE.Vector3(cx, h + tierH / 2, cz), q, s);
+        } else if (type === ZONE.INDUSTRIAL) {
+          const ventH = footprint * 0.18;
+          s.set(footprint * 0.22, ventH, footprint * 0.22);
+          m.compose(new THREE.Vector3(cx + footprint * 0.22, h + ventH / 2, cz + footprint * 0.22), q, s);
+        } else {
+          const capH = 0.15;
+          s.set(footprint * 1.08, capH, footprint * 1.08);
+          m.compose(new THREE.Vector3(cx, h + capH / 2, cz), q, s);
+        }
+        roofMesh.setMatrixAt(i, m);
+
+        // Window band - a single wrap-around strip per building, lit at
+        // night via city.setWindowGlow() (see main.js's day/night tick).
+        const bandH = Math.min(h * 0.22, 1.6);
+        s.set(footprint * 1.01, bandH, footprint * 1.01);
+        m.compose(new THREE.Vector3(cx, h * 0.62, cz), q, s);
+        windowMesh.setMatrixAt(i, m);
       });
       mesh.instanceMatrix.needsUpdate = true;
-      group.add(mesh);
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      roofMesh.instanceMatrix.needsUpdate = true;
+      windowMesh.instanceMatrix.needsUpdate = true;
+      group.add(mesh, roofMesh, windowMesh);
     }
 
     this.scene.add(group);
+  }
+
+  // hour in [0,24) - call alongside SceneManager.setTimeOfDay so lit
+  // building windows track the same day/night cycle.
+  setWindowGlow(hour) {
+    if (!this._windowMats) return;
+    const angle = (hour / 24) * Math.PI * 2 - Math.PI / 2;
+    const dayness = Math.max(0, Math.sin(angle));
+    const glow = Math.max(0, 0.9 - dayness * 1.1);
+    for (const mat of this._windowMats) mat.emissiveIntensity = glow;
   }
 }

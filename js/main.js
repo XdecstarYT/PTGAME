@@ -137,6 +137,7 @@ vehicleSystem.on('arrive', ({ vehicle }) => {
 });
 
 sceneManager.setTimeOfDay(timeSystem.hour);
+city.setWindowGlow(timeSystem.hour);
 ui.refreshHud();
 ui.showToast('Welcome! Pick the Station tool and click a colored zone tile near a road to start your network.');
 
@@ -211,6 +212,7 @@ timeSystem.on('tick', (simMinutes) => {
   passengerSystem.update(simMinutes, hour);
   vehicleSystem.update(simMinutes);
   sceneManager.setTimeOfDay(hour);
+  city.setWindowGlow(hour);
   audioSystem.setRushHourIntensity(TimeSystem.demandMultiplier(hour));
 });
 
