@@ -349,6 +349,9 @@ export class City {
     const roofBoxGeo = new THREE.BoxGeometry(1, 1, 1);
     const roofConeGeo = new THREE.ConeGeometry(0.5, 1, 6);
     const windowGeo = new THREE.BoxGeometry(1, 1, 1);
+    const plinthGeo = new THREE.BoxGeometry(1, 1, 1);
+    const accessoryBoxGeo = new THREE.BoxGeometry(1, 1, 1);
+    const accessoryCylGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 8);
     this._windowMats = [];
 
     for (const type of buildingTypes) {
@@ -372,6 +375,24 @@ export class City {
       });
       this._windowMats.push(windowMat);
       const windowMesh = new THREE.InstancedMesh(windowGeo, windowMat, tiles.length);
+
+      // A darker, slightly wider foundation strip so buildings look
+      // grounded instead of floating on the tile pad.
+      const plinthMat = new THREE.MeshStandardMaterial({ color, roughness: 0.9, flatShading: true });
+      plinthMat.color.multiplyScalar(0.55);
+      const plinthMesh = new THREE.InstancedMesh(plinthGeo, plinthMat, tiles.length);
+      plinthMesh.receiveShadow = true;
+
+      // A rooftop accessory whose shape reads as the zone type: a chimney
+      // for residential, an AC unit for commercial, a water tower for
+      // industrial, an antenna spike for landmarks.
+      const accessoryMat = new THREE.MeshStandardMaterial({
+        color: type === ZONE.INDUSTRIAL ? 0x9a9a94 : (type === ZONE.RESIDENTIAL ? 0x5a4a3a : 0xc9ccd1),
+        roughness: 0.6, metalness: type === ZONE.LANDMARK ? 0.5 : 0.1,
+      });
+      const accessoryGeo = type === ZONE.INDUSTRIAL || type === ZONE.LANDMARK ? accessoryCylGeo : accessoryBoxGeo;
+      const accessoryMesh = new THREE.InstancedMesh(accessoryGeo, accessoryMat, tiles.length);
+      accessoryMesh.castShadow = true;
 
       const m = new THREE.Matrix4();
       const q = new THREE.Quaternion();
@@ -405,24 +426,55 @@ export class City {
 
         // Roof cap - shape/proportions vary by zone type for a distinct
         // per-type roofline silhouette instead of a flat-topped box.
+        let roofTopY;
         if (type === ZONE.LANDMARK) {
           const spireH = h * 0.35;
           s.set(footprint * 0.55, spireH, footprint * 0.55);
           m.compose(new THREE.Vector3(cx, h + spireH / 2, cz), q, s);
+          roofTopY = h + spireH;
         } else if (type === ZONE.COMMERCIAL) {
           const tierH = h * 0.16;
           s.set(footprint * 0.55, tierH, footprint * 0.55);
           m.compose(new THREE.Vector3(cx, h + tierH / 2, cz), q, s);
+          roofTopY = h + tierH;
         } else if (type === ZONE.INDUSTRIAL) {
           const ventH = footprint * 0.18;
           s.set(footprint * 0.22, ventH, footprint * 0.22);
           m.compose(new THREE.Vector3(cx + footprint * 0.22, h + ventH / 2, cz + footprint * 0.22), q, s);
+          roofTopY = h;
         } else {
           const capH = 0.15;
           s.set(footprint * 1.08, capH, footprint * 1.08);
           m.compose(new THREE.Vector3(cx, h + capH / 2, cz), q, s);
+          roofTopY = h + capH;
         }
         roofMesh.setMatrixAt(i, m);
+
+        // Foundation plinth - a short, darker, slightly wider base ring.
+        const plinthH = Math.min(0.5, h * 0.15);
+        s.set(footprint * 1.1, plinthH, footprint * 1.1);
+        m.compose(new THREE.Vector3(cx, plinthH / 2, cz), q, s);
+        plinthMesh.setMatrixAt(i, m);
+
+        // Rooftop accessory - chimney / AC unit / water tower / antenna.
+        if (type === ZONE.LANDMARK) {
+          const antH = footprint * 0.5;
+          s.set(footprint * 0.05, antH, footprint * 0.05);
+          m.compose(new THREE.Vector3(cx, roofTopY + antH / 2, cz), q, s);
+        } else if (type === ZONE.INDUSTRIAL) {
+          const tankH = footprint * 0.4;
+          s.set(footprint * 0.3, tankH, footprint * 0.3);
+          m.compose(new THREE.Vector3(cx - footprint * 0.22, roofTopY + tankH / 2, cz - footprint * 0.22), q, s);
+        } else if (type === ZONE.COMMERCIAL) {
+          const acH = footprint * 0.14;
+          s.set(footprint * 0.25, acH, footprint * 0.2);
+          m.compose(new THREE.Vector3(cx, roofTopY + acH / 2, cz), q, s);
+        } else {
+          const chimH = footprint * 0.3;
+          s.set(footprint * 0.12, chimH, footprint * 0.12);
+          m.compose(new THREE.Vector3(cx + footprint * 0.3, roofTopY + chimH / 2, cz + footprint * 0.3), q, s);
+        }
+        accessoryMesh.setMatrixAt(i, m);
 
         // Window band - a single wrap-around strip per building, lit at
         // night via city.setWindowGlow() (see main.js's day/night tick).
@@ -432,10 +484,12 @@ export class City {
         windowMesh.setMatrixAt(i, m);
       });
       mesh.instanceMatrix.needsUpdate = true;
+      plinthMesh.instanceMatrix.needsUpdate = true;
+      accessoryMesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       roofMesh.instanceMatrix.needsUpdate = true;
       windowMesh.instanceMatrix.needsUpdate = true;
-      group.add(mesh, roofMesh, windowMesh);
+      group.add(mesh, roofMesh, windowMesh, plinthMesh, accessoryMesh);
     }
 
     this.scene.add(group);

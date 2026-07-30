@@ -79,7 +79,19 @@ export function buildExteriorMesh(model, chassis) {
     lightMats.push({ mat: interiorLight.material, kind: 'interior' });
 
     const wheelR = 0.5;
+    const archMat = new THREE.MeshStandardMaterial({ color: 0x0d0d0d, roughness: 0.8 });
     for (const wx of [-carLen * 0.3, carLen * 0.3]) {
+      // A dark flat inset panel above each wheel pair reads as a wheel-arch
+      // shadow instead of wheels floating under a flat wall.
+      for (const side of [1, -1]) {
+        const arch = new THREE.Mesh(
+          new THREE.BoxGeometry(wheelR * 2.3, wheelR * 1.5, 0.025),
+          archMat,
+        );
+        arch.position.set(wx, wheelR * 1.05, side * (carWidth / 2 + 0.013));
+        carGroup.add(arch);
+      }
+
       for (const wz of [-carWidth / 2 + 0.2, carWidth / 2 - 0.2]) {
         const wheel = new THREE.Mesh(new THREE.CylinderGeometry(wheelR, wheelR, 0.35, 12), wheelMat);
         wheel.rotation.x = Math.PI / 2;
@@ -94,6 +106,21 @@ export function buildExteriorMesh(model, chassis) {
       }
     }
 
+    // Recessed door-panel insets at each door zone, on both sides of the
+    // body, so doors read as actual openings rather than a seamless shell.
+    const doorInsetMat = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.4, metalness: 0.3 });
+    for (const doorCol of chassis.doorZones || []) {
+      const doorX = -carLen / 2 + (doorCol + 0.5) * (carLen / chassis.gridCols);
+      for (const side of [1, -1]) {
+        const doorPanel = new THREE.Mesh(
+          new THREE.BoxGeometry(carLen / chassis.gridCols * 0.7, carHeight * 0.5, 0.03),
+          doorInsetMat,
+        );
+        doorPanel.position.set(doorX, carHeight * 0.42 + 0.4, side * (carWidth / 2 + 0.016));
+        carGroup.add(doorPanel);
+      }
+    }
+
     // Slanted windshield on the lead car - a raked panel from the flat
     // front face up to the roofline, instead of a vertical front wall.
     if (i === 0) {
@@ -105,6 +132,48 @@ export function buildExteriorMesh(model, chassis) {
       windshield.position.set(carLen / 2 - carHeight * 0.16, carHeight * 0.78 + 0.4, 0);
       windshield.rotation.z = -rake;
       carGroup.add(windshield);
+
+      // Side mirrors, mounted at the front corners for bus/tram cabs.
+      if (chassis.category === 'bus' || chassis.category === 'tram') {
+        const mirrorMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.4 });
+        for (const side of [1, -1]) {
+          const arm = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.04, 0.04), mirrorMat);
+          arm.position.set(carLen / 2 - 0.35, carHeight * 0.62 + 0.4, side * (carWidth / 2 + 0.15));
+          carGroup.add(arm);
+          const glass = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.22, 0.14), windowMat);
+          glass.position.set(carLen / 2 - 0.15, carHeight * 0.6 + 0.4, side * (carWidth / 2 + 0.3));
+          carGroup.add(glass);
+        }
+      }
+    }
+
+    // Roof equipment: an AC/HVAC unit on every bus car, a pantograph on the
+    // lead car of overhead-wire-powered trams.
+    if (chassis.category === 'bus') {
+      const acUnit = new THREE.Mesh(
+        new THREE.BoxGeometry(carLen * 0.3, carHeight * 0.12, carWidth * 0.55),
+        new THREE.MeshStandardMaterial({ color: 0xd8dadd, roughness: 0.6 }),
+      );
+      acUnit.position.set(0, carHeight + 0.4 + carHeight * 0.06, 0);
+      acUnit.castShadow = true;
+      carGroup.add(acUnit);
+    }
+    if (i === 0 && chassis.category === 'tram' && model.powertrainId === 'electric') {
+      const pantoMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.5, metalness: 0.4 });
+      const baseY = carHeight + 0.4;
+      const frameBack = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.5, 0.06), pantoMat);
+      frameBack.position.set(-carLen * 0.15, baseY + 0.25, 0);
+      carGroup.add(frameBack);
+      const frameFront = frameBack.clone();
+      frameFront.position.x = carLen * 0.1;
+      carGroup.add(frameFront);
+      const diamond = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.45, 6), pantoMat);
+      diamond.rotation.z = Math.PI / 2;
+      diamond.position.set(-carLen * 0.025, baseY + 0.5, 0);
+      carGroup.add(diamond);
+      const contactBar = new THREE.Mesh(new THREE.BoxGeometry(carLen * 0.22, 0.03, 0.5), pantoMat);
+      contactBar.position.set(-carLen * 0.025, baseY + 0.52, 0);
+      carGroup.add(contactBar);
     }
 
     if (i === 0) {

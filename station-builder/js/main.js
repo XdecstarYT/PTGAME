@@ -96,7 +96,15 @@ canvas.addEventListener('click', () => {
   const meshes = placement.stations.map(s => s.mesh);
   const hits = raycaster.intersectObjects(meshes, true);
   if (hits.length) {
-    const station = placement.stations.find(s => s.mesh.children.includes(hits[0].object));
+    // Exterior shells are nested groups (walls/roof/plinth/etc, not flat
+    // children), so walk up the hit object's own parent chain rather than
+    // only checking s.mesh's direct children.
+    let o = hits[0].object;
+    let station = null;
+    while (o && !station) {
+      station = placement.stations.find(s => s.mesh === o) || null;
+      o = o.parent;
+    }
     if (station) { enterEditor(station); return; }
   }
 

@@ -159,7 +159,7 @@ export class PlacementSystem {
 
     // Type-specific architecture (shelter/pavilion/hall) sized to the
     // footprint - see architecture.js.
-    const shell = buildStationShell(station.typeId, station.tierId, footprintW, footprintD);
+    const shell = buildStationShell(station.typeId, station.tierId, footprintW, footprintD, station.name);
     shell.position.set(worldX, 0.3, worldZ);
     shell.traverse(m => { if (m.isMesh) m.receiveShadow = true; });
     group.add(shell);

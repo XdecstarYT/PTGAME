@@ -15,26 +15,40 @@ function darker(hex, amt = 0.35) {
   return c;
 }
 
+function castAll(group) {
+  group.traverse(m => { if (m.isMesh) m.castShadow = true; });
+  return group;
+}
+
 function benchMesh(color) {
   const group = new THREE.Group();
   const seatMat = new THREE.MeshStandardMaterial({ color });
   const legMat = new THREE.MeshStandardMaterial({ color: darker(color, 0.5) });
 
-  const seat = new THREE.Mesh(new THREE.BoxGeometry(S * 0.85, 0.06, S * 0.4), seatMat);
-  seat.position.set(0, 0.45, 0);
-  group.add(seat);
+  // Slatted seat - three narrow planks with gaps instead of one solid slab.
+  const slatCount = 3;
+  const slatW = (S * 0.85) / slatCount - 0.02;
+  for (let i = 0; i < slatCount; i++) {
+    const slat = new THREE.Mesh(new THREE.BoxGeometry(slatW, 0.05, S * 0.4), seatMat);
+    slat.position.set(-S * 0.85 / 2 + slatW / 2 + i * (slatW + 0.02), 0.45, 0);
+    group.add(slat);
+  }
 
-  const back = new THREE.Mesh(new THREE.BoxGeometry(S * 0.85, 0.4, 0.06), seatMat);
-  back.position.set(0, 0.65, -S * 0.18);
-  group.add(back);
+  for (let i = 0; i < 2; i++) {
+    const back = new THREE.Mesh(new THREE.BoxGeometry(S * 0.85, 0.12, 0.04), seatMat);
+    back.position.set(0, 0.58 + i * 0.16, -S * 0.18);
+    group.add(back);
+  }
 
   for (const side of [-1, 1]) {
     const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.45, S * 0.35), legMat);
     leg.position.set(side * S * 0.35, 0.225, 0);
     group.add(leg);
+    const footRest = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.03, S * 0.38), legMat);
+    footRest.position.set(side * S * 0.35, 0.05, 0);
+    group.add(footRest);
   }
-  group.traverse(m => { if (m.isMesh) m.castShadow = true; });
-  return group;
+  return castAll(group);
 }
 
 function ticketMachineMesh(color) {
@@ -44,7 +58,6 @@ function ticketMachineMesh(color) {
     new THREE.MeshStandardMaterial({ color }),
   );
   body.position.set(0, 0.65, 0);
-  body.castShadow = true;
   group.add(body);
 
   const screen = new THREE.Mesh(
@@ -53,7 +66,24 @@ function ticketMachineMesh(color) {
   );
   screen.position.set(0, 0.95, S * 0.176);
   group.add(screen);
-  return group;
+
+  // A small keypad grid below the screen.
+  const keyMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      const key = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.02), keyMat);
+      key.position.set((c - 1) * 0.07, 0.68 + (1 - r) * 0.06, S * 0.176);
+      group.add(key);
+    }
+  }
+  // Coin/card slot.
+  const slot = new THREE.Mesh(
+    new THREE.BoxGeometry(0.14, 0.02, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0x0a0a0a }),
+  );
+  slot.position.set(0, 0.42, S * 0.176);
+  group.add(slot);
+  return castAll(group);
 }
 
 function kioskMesh(color) {
@@ -63,17 +93,35 @@ function kioskMesh(color) {
     new THREE.MeshStandardMaterial({ color }),
   );
   body.position.set(0, 0.55, 0);
-  body.castShadow = true;
   group.add(body);
+
+  // A serving-window cutout: a lighter inset panel with a counter ledge.
+  const window_ = new THREE.Mesh(
+    new THREE.PlaneGeometry(S * 0.55, 0.4),
+    new THREE.MeshStandardMaterial({ color: 0x1a2230, roughness: 0.25, metalness: 0.3 }),
+  );
+  window_.position.set(0, 0.72, S * 0.401);
+  group.add(window_);
+  const counter = new THREE.Mesh(
+    new THREE.BoxGeometry(S * 0.62, 0.04, 0.12),
+    new THREE.MeshStandardMaterial({ color: darker(color, 0.15) }),
+  );
+  counter.position.set(0, 0.5, S * 0.44);
+  group.add(counter);
 
   const awning = new THREE.Mesh(
     new THREE.BoxGeometry(S * 1.05, 0.06, S * 1.05),
     new THREE.MeshStandardMaterial({ color: darker(color, 0.25) }),
   );
   awning.position.set(0, 1.15, 0);
-  awning.castShadow = true;
   group.add(awning);
-  return group;
+  // Awning support struts.
+  for (const side of [-1, 1]) {
+    const strut = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.28, 0.03), new THREE.MeshStandardMaterial({ color: 0x2a2a2a }));
+    strut.position.set(side * S * 0.35, 1.0, S * 0.45);
+    group.add(strut);
+  }
+  return castAll(group);
 }
 
 function restroomMesh(color) {
@@ -83,15 +131,19 @@ function restroomMesh(color) {
     new THREE.MeshStandardMaterial({ color }),
   );
   body.position.set(0, 0.55, 0);
-  body.castShadow = true;
   group.add(body);
 
-  const door = new THREE.Mesh(
-    new THREE.PlaneGeometry(S * 0.35, 0.85),
-    new THREE.MeshStandardMaterial({ color: darker(color, 0.4) }),
-  );
+  const doorMat = new THREE.MeshStandardMaterial({ color: darker(color, 0.4) });
+  const door = new THREE.Mesh(new THREE.BoxGeometry(S * 0.36, 0.85, 0.03), doorMat);
   door.position.set(0, 0.5, S * 0.451);
   group.add(door);
+  const handle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.015, 0.015, 0.1, 6),
+    new THREE.MeshStandardMaterial({ color: 0xc9ccd1, metalness: 0.7, roughness: 0.3 }),
+  );
+  handle.rotation.x = Math.PI / 2;
+  handle.position.set(S * 0.15, 0.5, S * 0.47);
+  group.add(handle);
 
   const sign = new THREE.Mesh(
     new THREE.CircleGeometry(0.12, 16),
@@ -99,27 +151,38 @@ function restroomMesh(color) {
   );
   sign.position.set(0, 1.0, S * 0.451);
   group.add(sign);
-  return group;
+  return castAll(group);
 }
 
 function infoBoardMesh(color) {
   const group = new THREE.Group();
   const pole = new THREE.Mesh(
     new THREE.CylinderGeometry(0.05, 0.05, 1.4, 8),
-    new THREE.MeshStandardMaterial({ color: 0x8a8a8a }),
+    new THREE.MeshStandardMaterial({ color: 0x8a8a8a, metalness: 0.4, roughness: 0.5 }),
   );
   pole.position.set(0, 0.7, 0);
-  pole.castShadow = true;
   group.add(pole);
+  const poleBase = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.14, 0.14, 0.04, 12),
+    new THREE.MeshStandardMaterial({ color: 0x555555 }),
+  );
+  poleBase.position.set(0, 0.02, 0);
+  group.add(poleBase);
 
   const board = new THREE.Mesh(
     new THREE.BoxGeometry(S * 0.7, 0.5, 0.05),
     new THREE.MeshStandardMaterial({ color }),
   );
   board.position.set(0, 1.35, 0);
-  board.castShadow = true;
   group.add(board);
-  return group;
+  // A lit info-screen inset on the board face.
+  const screen = new THREE.Mesh(
+    new THREE.PlaneGeometry(S * 0.6, 0.4),
+    new THREE.MeshStandardMaterial({ color: 0x0c1420, emissive: 0x5fa0d9, emissiveIntensity: 0.3 }),
+  );
+  screen.position.set(0, 1.35, 0.026);
+  group.add(screen);
+  return castAll(group);
 }
 
 function turnstileMesh(color) {
@@ -128,8 +191,14 @@ function turnstileMesh(color) {
   for (const side of [-1, 1]) {
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.0, 0.1), postMat);
     post.position.set(side * S * 0.32, 0.5, 0);
-    post.castShadow = true;
     group.add(post);
+    // Card-reader panel on the entry-side post.
+    const reader = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.12, 0.02),
+      new THREE.MeshStandardMaterial({ color: 0x2a3a4a, emissive: 0x4fa0d9, emissiveIntensity: 0.4 }),
+    );
+    reader.position.set(side * S * 0.32, 0.75, 0.07);
+    group.add(reader);
   }
   const arm = new THREE.Mesh(
     new THREE.BoxGeometry(S * 0.64, 0.08, 0.08),
@@ -137,22 +206,35 @@ function turnstileMesh(color) {
   );
   arm.position.set(0, 0.85, 0);
   group.add(arm);
-  return group;
+  return castAll(group);
 }
 
 function stairsMesh(color) {
   const group = new THREE.Group();
   const steps = 5;
   const mat = new THREE.MeshStandardMaterial({ color });
+  const nosingMat = new THREE.MeshStandardMaterial({ color: darker(color, 0.4) });
   for (let i = 0; i < steps; i++) {
     const stepH = 0.5 * ((i + 1) / steps);
     const stepD = S / steps;
+    const stepZ = -S / 2 + stepD * (i + 0.5);
     const step = new THREE.Mesh(new THREE.BoxGeometry(S * 0.9, stepH, stepD * 1.02), mat);
-    step.position.set(0, stepH / 2, -S / 2 + stepD * (i + 0.5));
-    step.castShadow = true;
+    step.position.set(0, stepH / 2, stepZ);
     group.add(step);
+    // A darker nosing strip along each tread's leading edge.
+    const nosing = new THREE.Mesh(new THREE.BoxGeometry(S * 0.9, 0.02, 0.03), nosingMat);
+    nosing.position.set(0, stepH + 0.01, stepZ + stepD * 0.49);
+    group.add(nosing);
   }
-  return group;
+  // Handrails along both sides, rising with the stairs.
+  const railMat = new THREE.MeshStandardMaterial({ color: 0x8a8a8a, metalness: 0.5, roughness: 0.4 });
+  for (const side of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, S * 1.05), railMat);
+    rail.position.set(side * S * 0.47, 0.55, 0);
+    rail.rotation.x = -0.42;
+    group.add(rail);
+  }
+  return castAll(group);
 }
 
 function escalatorMesh(color) {
@@ -163,8 +245,18 @@ function escalatorMesh(color) {
   );
   ramp.rotation.x = -0.35;
   ramp.position.set(0, 0.12, 0);
-  ramp.castShadow = true;
   group.add(ramp);
+
+  // Ridge lines across the ramp suggesting individual moving steps.
+  const ridgeMat = new THREE.MeshStandardMaterial({ color: darker(color, 0.3) });
+  const ridgeCount = 8;
+  for (let i = 0; i < ridgeCount; i++) {
+    const t = (i + 0.5) / ridgeCount - 0.5;
+    const ridge = new THREE.Mesh(new THREE.BoxGeometry(S * 0.86, 0.03, 0.02), ridgeMat);
+    ridge.position.set(0, 0.19, t * S * 1.15);
+    ridge.rotation.x = -0.35;
+    group.add(ridge);
+  }
 
   const railMat = new THREE.MeshStandardMaterial({ color: darker(color, 0.2) });
   for (const side of [-1, 1]) {
@@ -173,7 +265,7 @@ function escalatorMesh(color) {
     rail.position.set(side * S * 0.45, 0.32, 0);
     group.add(rail);
   }
-  return group;
+  return castAll(group);
 }
 
 function elevatorMesh(color) {
@@ -183,7 +275,6 @@ function elevatorMesh(color) {
     new THREE.MeshStandardMaterial({ color: darker(color, 0.15) }),
   );
   shaft.position.set(0, 1.2, 0);
-  shaft.castShadow = true;
   group.add(shaft);
 
   const doorSeam = new THREE.Mesh(
@@ -199,7 +290,15 @@ function elevatorMesh(color) {
   );
   button.position.set(S * 0.4, 1.1, S * 0.451);
   group.add(button);
-  return group;
+
+  // A floor-indicator readout above the doors.
+  const indicator = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.22, 0.14),
+    new THREE.MeshStandardMaterial({ color: 0x0c1420, emissive: 0xff8a3d, emissiveIntensity: 0.6 }),
+  );
+  indicator.position.set(0, 2.05, S * 0.451);
+  group.add(indicator);
+  return castAll(group);
 }
 
 const BUILDERS = {
