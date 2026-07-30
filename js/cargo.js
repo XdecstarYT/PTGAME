@@ -169,6 +169,7 @@ export class CargoSystem {
         state: 'idle', shipmentId: null, phase: null,
         path: null, dist: 0, roadTile: depot.roadTile,
         worldX: depot.worldX, worldZ: depot.worldZ,
+        brokenDown: false,
         mesh,
       };
       this.trucks.set(id, truck);
@@ -296,7 +297,7 @@ export class CargoSystem {
 
       let bestTruck = null, bestDist = Infinity;
       for (const truck of this.trucks.values()) {
-        if (truck.state !== 'idle') continue;
+        if (truck.state !== 'idle' || truck.brokenDown) continue;
         const chassis = freightChassisById(truck.chassisId);
         if (!chassis.compatibleCargo.includes(shipment.cargoTypeId)) continue;
         const dist = Math.hypot(truck.worldX - origin.worldX, truck.worldZ - origin.worldZ);

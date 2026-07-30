@@ -223,6 +223,8 @@ export class UIController {
         action = `<button class="action secondary" data-rush="${ev.vehicleId}">Rush Repair (${fmtMoney(this.eventSystem.rushRepairCost)})</button>`;
       } else if (ev.type === 'strike') {
         action = `<button class="action secondary" data-settle="${ev.routeId}">Settle (${fmtMoney(this.eventSystem.settleStrikeCost)})</button>`;
+      } else if (ev.type === 'truck_breakdown') {
+        action = `<button class="action secondary" data-rush-truck="${ev.truckId}">Rush Repair (${fmtMoney(this.eventSystem.rushRepairCost)})</button>`;
       }
       return `<div class="disruption-item"><span>${ev.label}</span><span class="days-left">${daysLeft}d left</span>${action}</div>`;
     }).join('') || '<p>No active disruptions right now.</p>';
@@ -238,6 +240,12 @@ export class UIController {
       btn.addEventListener('click', () => {
         if (this.eventSystem.settleStrike(btn.dataset.settle)) { this.openDisruptionsModal(); this.refreshDisruptionBadge(); }
         else this.showToast('Not enough budget to settle the strike.');
+      });
+    });
+    this.dom.modalContent.querySelectorAll('[data-rush-truck]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (this.eventSystem.rushRepairTruck(btn.dataset.rushTruck)) { this.openDisruptionsModal(); this.refreshDisruptionBadge(); }
+        else this.showToast('Not enough budget for a rush repair.');
       });
     });
   }
@@ -862,11 +870,13 @@ export class UIController {
       <h4>Workforce</h4>
       <div class="row"><span>Drivers</span><b>${this.staffing.drivers} / ${this.staffing.requiredDrivers(this.network)} needed</b></div>
       <div class="row"><span>Mechanics</span><b>${this.staffing.mechanics} / ${this.staffing.requiredMechanics(this.network)} needed</b></div>
+      <div class="row"><span>Dock workers</span><b>${this.staffing.dockWorkers} / ${this.staffing.requiredDockWorkers(this.cargoSystem)} needed</b></div>
       <div class="row"><span>Morale</span><b>${Math.round(this.staffing.morale)}%</b></div>
       <div class="bar-track"><div class="bar-fill" style="width:${this.staffing.morale}%;background:${this.staffing.morale < 40 ? '#ff6b6b' : this.staffing.morale < 70 ? '#ffd166' : '#6ee7c9'}"></div></div>
       <div style="margin:6px 0">
         <button class="action secondary" id="hire-driver-btn">Hire Driver (${fmtMoney(this.staffing.hireDriverCost)})</button>
         <button class="action secondary" id="hire-mechanic-btn">Hire Mechanic (${fmtMoney(this.staffing.hireMechanicCost)})</button>
+        <button class="action secondary" id="hire-dock-worker-btn">Hire Dock Worker (${fmtMoney(this.staffing.hireDockWorkerCost)})</button>
         <button class="action secondary" id="train-btn">Train Staff (${fmtMoney(this.staffing.trainCost)})</button>
       </div>
       <h4>Recent days</h4>
@@ -910,6 +920,10 @@ export class UIController {
     document.getElementById('hire-mechanic-btn')?.addEventListener('click', () => {
       if (this.staffing.hireMechanic()) this.openFinanceModal();
       else this.showToast('Not enough budget to hire a mechanic.');
+    });
+    document.getElementById('hire-dock-worker-btn')?.addEventListener('click', () => {
+      if (this.staffing.hireDockWorker()) this.openFinanceModal();
+      else this.showToast('Not enough budget to hire a dock worker.');
     });
     document.getElementById('train-btn')?.addEventListener('click', () => {
       if (this.staffing.train()) this.openFinanceModal();

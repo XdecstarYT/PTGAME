@@ -8,13 +8,14 @@ let _idCounter = 1;
 // working network: breakdowns, strikes, weather, demand spikes, and periodic
 // fuel/subsidy shocks. Ticks off time.js's 'newDay' event via onNewDay().
 export class EventSystem {
-  constructor({ network, vehicleSystem, economy, city, ui, staffing }) {
+  constructor({ network, vehicleSystem, economy, city, ui, staffing, cargoSystem }) {
     this.network = network;
     this.vehicleSystem = vehicleSystem;
     this.economy = economy;
     this.city = city;
     this.ui = ui;
     this.staffing = staffing;
+    this.cargoSystem = cargoSystem;
     this.active = [];
   }
 
@@ -24,8 +25,14 @@ export class EventSystem {
   }
 
   serialize() {
-    return this.active.map(({ type, vehicleId, routeId, tileKey, stationId, label, expiresAtDay }) =>
-      ({ type, vehicleId, routeId, tileKey, stationId, label, expiresAtDay }));
+    // truck_breakdown is left out: truck ids aren't stable across a save/load
+    // round-trip (trucks aren't individually persisted - see cargo.js/
+    // saveLoad.js), so a restored event could never resolve against a real
+    // truck anyway. Trucks simply respawn idle (not broken down) on load,
+    // same simplification already applied to in-flight passengers/shipments.
+    return this.active.filter(ev => ev.type !== 'truck_breakdown')
+      .map(({ type, vehicleId, routeId, tileKey, stationId, label, expiresAtDay }) =>
+        ({ type, vehicleId, routeId, tileKey, stationId, label, expiresAtDay }));
   }
 
   // The mutations themselves (brokenDown/strikeActive/multipliers/closed
@@ -61,6 +68,10 @@ export class EventSystem {
     if (committedRoutes.some(r => !r.strikeActive)) types.push('strike');
     if (this._findBridgeTile()) types.push('weather_bridge');
     if (this.network.stations.size > 0) types.push('demand_spike');
+    if (this.cargoSystem && [...this.cargoSystem.trucks.values()].some(t => t.state === 'idle' && !t.brokenDown)) {
+      const weight = this.staffing ? Math.round(this.staffing.breakdownWeightMultiplier()) : 1;
+      for (let i = 0; i < weight; i++) types.push('truck_breakdown');
+    }
     return types;
   }
 
@@ -167,6 +178,18 @@ export class EventSystem {
         expiresAtDay: day + 3 + Math.floor(Math.random() * 3),
         onResolve: () => { this.economy.subsidyMultiplier = 1; },
       });
+    } else if (type === 'truck_breakdown') {
+      const candidates = [...this.cargoSystem.trucks.values()].filter(t => t.state === 'idle' && !t.brokenDown);
+      if (!candidates.length) return;
+      const truck = candidates[Math.floor(Math.random() * candidates.length)];
+      const depot = this.cargoSystem.depots.get(truck.depotId);
+      truck.brokenDown = true;
+      const moraleStretch = this.staffing ? Math.max(1, this.staffing.breakdownWeightMultiplier()) : 1;
+      this._pushEvent({
+        type, truckId: truck.id,
+        label: `Truck breakdown at ${depot?.name || 'a depot'} - one fewer truck hauling until repaired.`,
+        expiresAtDay: day + Math.round((1 + Math.floor(Math.random() * 2)) * moraleStretch),
+      });
     }
   }
 
@@ -183,6 +206,9 @@ export class EventSystem {
     } else if (ev.type === 'strike') {
       const r = this.network.routes.get(ev.routeId);
       if (r) r.strikeActive = false;
+    } else if (ev.type === 'truck_breakdown') {
+      const t = this.cargoSystem?.trucks.get(ev.truckId);
+      if (t) t.brokenDown = false;
     } else if (ev.onResolve) {
       ev.onResolve();
     }
@@ -194,6 +220,15 @@ export class EventSystem {
 
   rushRepair(vehicleId) {
     const ev = this.active.find(e => e.type === 'breakdown' && e.vehicleId === vehicleId);
+    if (!ev) return false;
+    if (!this.economy.canAfford(RUSH_REPAIR_COST)) return false;
+    this.economy.spend(RUSH_REPAIR_COST);
+    this._resolveEvent(ev);
+    return true;
+  }
+
+  rushRepairTruck(truckId) {
+    const ev = this.active.find(e => e.type === 'truck_breakdown' && e.truckId === truckId);
     if (!ev) return false;
     if (!this.economy.canAfford(RUSH_REPAIR_COST)) return false;
     this.economy.spend(RUSH_REPAIR_COST);

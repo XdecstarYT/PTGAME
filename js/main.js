@@ -70,7 +70,7 @@ document.getElementById('btn-build-creator').addEventListener('click', () => bui
 const staffing = new Staffing(economy);
 ui.setStaffing(staffing);
 
-const eventSystem = new EventSystem({ network, vehicleSystem, economy, city, ui, staffing });
+const eventSystem = new EventSystem({ network, vehicleSystem, economy, city, ui, staffing, cargoSystem });
 ui.setEventSystem(eventSystem);
 
 const contractSystem = new ContractSystem({ city, network, economy, passengerSystem, ui });
@@ -81,7 +81,7 @@ ui.setShippingContractSystem(shippingContractSystem);
 
 const newsTicker = new NewsTicker({
   el: document.getElementById('news-ticker-text'),
-  network, economy, passengerSystem, vehicleSystem, catalog,
+  network, economy, passengerSystem, vehicleSystem, catalog, cargoSystem,
 });
 
 const saveLoadSystem = new SaveLoadSystem({
@@ -250,7 +250,7 @@ timeSystem.on('newDay', (newDay) => {
 
   eventSystem.onNewDay(newDay);
   contractSystem.onNewDay(newDay);
-  staffing.onNewDay(network);
+  staffing.onNewDay(network, cargoSystem);
   cargoSystem.onNewDay();
   shippingContractSystem.onNewDay(newDay);
 

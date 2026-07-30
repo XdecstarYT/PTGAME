@@ -101,7 +101,7 @@ export class SaveLoadSystem {
       events: this.eventSystem.serialize(),
       contracts: this.contractSystem.serialize(),
       contractsCompleted: this.contractSystem.completedCount,
-      staffing: { drivers: this.staffing.drivers, mechanics: this.staffing.mechanics, morale: this.staffing.morale },
+      staffing: { drivers: this.staffing.drivers, mechanics: this.staffing.mechanics, dockWorkers: this.staffing.dockWorkers, morale: this.staffing.morale },
       depots: [...this.cargoSystem.depots.values()].map(d => ({
         id: d.id, name: d.name, x: d.x, z: d.z, roadTile: d.roadTile,
         modelId: d.modelId, truckCount: d.truckCount, stats: d.stats,
@@ -123,6 +123,7 @@ export class SaveLoadSystem {
     this.economy.restore(data.economy);
     this.staffing.drivers = data.staffing.drivers;
     this.staffing.mechanics = data.staffing.mechanics;
+    this.staffing.dockWorkers = data.staffing.dockWorkers ?? 2;
     this.staffing.morale = data.staffing.morale;
     this.timeSystem.day = data.time.day;
     this.timeSystem.minutesOfDay = data.time.minutesOfDay;

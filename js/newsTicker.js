@@ -2,13 +2,14 @@
 // seconds, sourced from live satisfaction/crowding/congestion/lost-demand
 // data so it reads as an at-a-glance emotional pulse on the network.
 export class NewsTicker {
-  constructor({ el, network, economy, passengerSystem, vehicleSystem, catalog }) {
+  constructor({ el, network, economy, passengerSystem, vehicleSystem, catalog, cargoSystem }) {
     this.el = el;
     this.network = network;
     this.economy = economy;
     this.passengerSystem = passengerSystem;
     this.vehicleSystem = vehicleSystem;
     this.catalog = catalog;
+    this.cargoSystem = cargoSystem;
     this._timer = 0;
     this._intervalMs = 7000;
     this._show(this._pickMessage());
@@ -57,6 +58,14 @@ export class NewsTicker {
 
     if (this.economy.fuelPriceMultiplier > 1) pools.push('Commuters ask if fare hikes are coming after the fuel price spike.');
     if (this.economy.subsidyMultiplier < 1) pools.push('Advocacy groups criticize the city council over the subsidy cut.');
+
+    if (this.cargoSystem) {
+      const trucks = [...this.cargoSystem.trucks.values()];
+      if (trucks.some(t => t.brokenDown)) pools.push('A delivery truck breakdown has shippers grumbling about delayed cargo.');
+      if (this.cargoSystem.spoiledCount > 0) pools.push('A grocer complains a shipment arrived spoiled - "the fridge trucks need to move faster."');
+      if (this.cargoSystem.depots.size > 0 && this.cargoSystem.deliveredCount > 20) pools.push('"Shelves are finally staying stocked," a shopkeeper says of the new freight routes.');
+      if (trucks.filter(t => t.state === 'enroute').length > 4) pools.push('Truckers report a busy day of deliveries crisscrossing the city.');
+    }
 
     if (!pools.length) pools.push('The city hums along quietly today.');
     return pools[Math.floor(Math.random() * pools.length)];
