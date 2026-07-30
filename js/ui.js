@@ -31,6 +31,9 @@ export class UIController {
     this.contractSystem = null; // set later via setContractSystem
     this.staffing = null; // set later via setStaffing
     this.cargoSystem = null; // set later via setCargoSystem
+    this.buildingCatalog = null; // set later via setBuildingCatalog
+    this.buildingEditor = null; // set later via setBuildingEditor
+    this.pendingBuildingDesignId = null;
 
     this.tool = 'select';
     this.draftRoute = null;
@@ -54,6 +57,8 @@ export class UIController {
   setContractSystem(cs) { this.contractSystem = cs; }
   setStaffing(s) { this.staffing = s; }
   setCargoSystem(cs) { this.cargoSystem = cs; }
+  setBuildingCatalog(bc) { this.buildingCatalog = bc; }
+  setBuildingEditor(be) { this.buildingEditor = be; }
 
   _cacheDom() {
     this.dom = {
@@ -141,7 +146,9 @@ export class UIController {
       btn.addEventListener('click', () => {
         const tool = btn.dataset.tool;
         if (tool === 'vehicle') { this.openRoutesModal(); return; }
+        if (tool === 'building') { this._openBuildingPicker(); return; }
         this._cancelDraftRoute();
+        this.pendingBuildingDesignId = null;
         this.tool = tool;
         for (const b of this.dom.toolBtns) b.classList.toggle('active', b.dataset.tool === tool);
         this.closePanel();
@@ -156,7 +163,8 @@ export class UIController {
       station: `Click a developed zone tile near a road to build a station (${fmtMoney(STATION_COST)}).`,
       route: 'Click stations in order to add stops. Open the panel to choose a vehicle & finish.',
       depot: `Click a developed zone tile near a road to build a cargo depot (${fmtMoney(CARGO_DEPOT_COST)}).`,
-      delete: 'Click a station or depot to remove it. Manage routes from the Routes panel.',
+      building: 'Click a developed zone tile to place your building design there.',
+      delete: 'Click a station, depot, or custom building to remove it. Manage routes from the Routes panel.',
     };
     const text = hints[this.tool] || '';
     this.dom.toolHint.textContent = text;
@@ -300,11 +308,14 @@ export class UIController {
       this._placeStation(tx, tz);
     } else if (this.tool === 'depot') {
       this._placeDepot(tx, tz);
+    } else if (this.tool === 'building') {
+      this._placeBuildingOnTile(tx, tz);
     } else if (this.tool === 'route') {
       if (clickedStation) this._addStationToDraft(clickedStation.id);
     } else if (this.tool === 'delete') {
       if (clickedStation) this.deleteStation(clickedStation.id);
       else if (clickedDepot) this.deleteDepot(clickedDepot.id);
+      else if (this.city.customBuildings.has(`${tx}_${tz}`)) this._deleteCustomBuilding(tx, tz);
     }
   }
 
@@ -362,6 +373,57 @@ export class UIController {
     this.cargoSystem.removeDepot(id);
     this.closePanel();
     this.showToast(`Deleted ${depot.name}`);
+  }
+
+  // ---------------- custom buildings (Building Creator) ----------------
+
+  _openBuildingPicker() {
+    if (!this.buildingCatalog) return;
+    const designs = this.buildingCatalog.list();
+    const cards = designs.map(d => `
+      <div class="showroom-card">
+        <img src="${d.thumbnail || ''}" class="showroom-thumb ${d.thumbnail ? '' : 'hidden'}">
+        <div class="showroom-name">${d.name}</div>
+        <button class="action secondary" data-pick="${d.id}">Place</button>
+      </div>
+    `).join('') || '<p>No building designs yet - use the Building Creator to make one.</p>';
+
+    this.openModal('Place a Building', `
+      <div class="showroom-grid">${cards}</div>
+      <button class="action" id="picker-building-new" style="margin-top:10px">＋ Design a New Building</button>
+    `);
+    this.dom.modalContent.querySelectorAll('[data-pick]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.pendingBuildingDesignId = btn.dataset.pick;
+        this.closeModal();
+        this.tool = 'building';
+        for (const b of this.dom.toolBtns) b.classList.toggle('active', b.dataset.tool === 'building');
+        this.closePanel();
+        this.updateToolHint();
+        this.showToast('Click a developed tile to place your building.');
+      });
+    });
+    document.getElementById('picker-building-new').addEventListener('click', () => {
+      this.closeModal();
+      this.buildingEditor?.open();
+    });
+  }
+
+  _placeBuildingOnTile(tx, tz) {
+    if (!this.buildingCatalog || !this.pendingBuildingDesignId) return;
+    const design = this.buildingCatalog.get(this.pendingBuildingDesignId);
+    if (!design) { this.showToast('That design no longer exists.'); this.pendingBuildingDesignId = null; return; }
+    const check = this.city.canPlaceCustomBuilding(tx, tz);
+    if (!check.ok) { this.showToast(check.reason); return; }
+    this.city.placeCustomBuilding(tx, tz, design);
+    this.showToast(`Placed "${design.name}".`);
+  }
+
+  _deleteCustomBuilding(tx, tz) {
+    const entry = this.city.customBuildings.get(`${tx}_${tz}`);
+    if (!entry) return;
+    this.city.removeCustomBuilding(tx, tz);
+    this.showToast(`Removed "${entry.design.name}".`);
   }
 
   selectDepot(id) {

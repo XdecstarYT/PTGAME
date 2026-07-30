@@ -11,7 +11,9 @@ function el(html) { const d = document.createElement('div'); d.innerHTML = html.
 // editor - plus a "Details" tab with Minecraft-style voxel blocks clicked
 // directly onto the 3D preview, layered on top for freeform decoration.
 export class BuildingEditor {
-  constructor() {
+  constructor({ catalog, ui } = {}) {
+    this.catalog = catalog;
+    this.ui = ui;
     this.dom = {
       layer: document.getElementById('building-layer'),
       close: document.getElementById('building-close'),
@@ -19,6 +21,9 @@ export class BuildingEditor {
       canvas: document.getElementById('building-viewport'),
       stats: document.getElementById('building-stats'),
       tabButtons: [...document.querySelectorAll('.building-tab')],
+      showroomBtn: document.getElementById('building-showroom-btn'),
+      newBtn: document.getElementById('building-new-btn'),
+      saveBtn: document.getElementById('building-save-btn'),
     };
     this.scene = new BuildingScene(this.dom.canvas);
     this.isOpen = false;
@@ -30,6 +35,9 @@ export class BuildingEditor {
     this.voxelMode = 'place'; // 'place' | 'erase'
 
     this.dom.close.addEventListener('click', () => this.close());
+    this.dom.showroomBtn.addEventListener('click', () => this.openShowroom());
+    this.dom.newBtn.addEventListener('click', () => this.newDesign());
+    this.dom.saveBtn.addEventListener('click', () => this.save());
     for (const btn of this.dom.tabButtons) {
       btn.addEventListener('click', () => {
         this.activeTab = btn.dataset.tab;
@@ -90,9 +98,20 @@ export class BuildingEditor {
 
   close() { this.isOpen = false; this.dom.layer.classList.add('hidden'); }
 
-  newDesign(footprintId) {
+  newDesign(footprintId = 'small') {
     this.design = createDefaultBuildingDesign(footprintId);
     this.activeLevel = 0;
+    this.activeTab = 'structure';
+    for (const b of this.dom.tabButtons) b.classList.toggle('active', b.dataset.tab === 'structure');
+    this._refreshAll();
+  }
+
+  loadForEdit(designId) {
+    const src = this.catalog.get(designId);
+    if (!src) return;
+    this.design = JSON.parse(JSON.stringify(src));
+    this.activeLevel = 0;
+    this.open();
     this._refreshAll();
   }
 
@@ -314,5 +333,54 @@ export class BuildingEditor {
       <div class="row"><span>Decoration blocks</span><b>${design.voxels.length}</b></div>
       ${doorCount === 0 ? '<div class="row violation">⚠️ No doors placed - add at least one entrance.</div>' : ''}
     `;
+  }
+
+  // ---------------- save / gallery ----------------
+
+  save() {
+    const nameInput = window.prompt('Name this building:', this.design.name);
+    if (nameInput === null) return;
+    this.design.name = nameInput || this.design.name;
+    this.design.thumbnail = this.scene.snapshot();
+    const saved = this.catalog.save(this.design);
+    this.ui.showToast(`Saved "${saved.name}" to your building gallery.`);
+  }
+
+  openShowroom() {
+    const designs = this.catalog.list();
+    const cards = designs.map(d => `
+      <div class="showroom-card">
+        <img src="${d.thumbnail || ''}" class="showroom-thumb ${d.thumbnail ? '' : 'hidden'}">
+        <div class="showroom-name">${d.name}</div>
+        <div class="showroom-meta">${footprintPreset(d.footprintId).label} · ${d.levels.length} floor${d.levels.length === 1 ? '' : 's'} · ${d.voxels.length} blocks</div>
+        <div class="showroom-actions">
+          <button class="action secondary" data-edit="${d.id}">Edit</button>
+          <button class="action secondary" data-clone="${d.id}">Clone</button>
+          <button class="action secondary" data-export="${d.id}">Export</button>
+          <button class="action danger" data-delete="${d.id}">Delete</button>
+        </div>
+      </div>`).join('') || '<p>No building designs yet - use "New" in the Building Creator to make one.</p>';
+
+    this.ui.openModal('Building Gallery', `
+      <div class="showroom-toolbar">
+        <label class="action secondary" style="cursor:pointer">Import JSON<input type="file" id="building-showroom-import" accept=".json" class="hidden"></label>
+      </div>
+      <div class="showroom-grid">${cards}</div>
+    `);
+
+    const content = this.ui.dom.modalContent;
+    content.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => { this.ui.closeModal(); this.loadForEdit(b.dataset.edit); }));
+    content.querySelectorAll('[data-clone]').forEach(b => b.addEventListener('click', () => { this.catalog.clone(b.dataset.clone); this.openShowroom(); }));
+    content.querySelectorAll('[data-export]').forEach(b => b.addEventListener('click', () => this.catalog.downloadExport(b.dataset.export)));
+    content.querySelectorAll('[data-delete]').forEach(b => b.addEventListener('click', () => {
+      this.catalog.remove(b.dataset.delete);
+      this.openShowroom();
+    }));
+    document.getElementById('building-showroom-import').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try { await this.catalog.importFromFile(file); this.ui.showToast('Design imported.'); this.openShowroom(); }
+      catch (err) { this.ui.showToast(err.message); }
+    });
   }
 }

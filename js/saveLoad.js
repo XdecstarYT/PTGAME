@@ -22,7 +22,7 @@ function maxNumericSuffix(ids) {
 export class SaveLoadSystem {
   constructor({
     city, network, vehicleSystem, economy, timeSystem, eventSystem, contractSystem, staffing, ui, schematicView,
-    cargoSystem, shippingContractSystem,
+    cargoSystem, shippingContractSystem, buildingCatalog,
   }) {
     this.city = city;
     this.network = network;
@@ -36,6 +36,7 @@ export class SaveLoadSystem {
     this.schematicView = schematicView;
     this.cargoSystem = cargoSystem;
     this.shippingContractSystem = shippingContractSystem;
+    this.buildingCatalog = buildingCatalog;
   }
 
   listSlots() {
@@ -109,6 +110,7 @@ export class SaveLoadSystem {
       cargoDeliveredCount: this.cargoSystem.deliveredCount,
       shippingContracts: this.shippingContractSystem.serialize(),
       shippingContractsCompleted: this.shippingContractSystem.completedCount,
+      customBuildings: [...this.city.customBuildings.values()].map(e => ({ x: e.x, z: e.z, designId: e.design.id })),
     };
   }
 
@@ -147,6 +149,11 @@ export class SaveLoadSystem {
     this.contractSystem.completedCount = data.contractsCompleted || 0;
     this.shippingContractSystem.rehydrate(data.shippingContracts);
     this.shippingContractSystem.completedCount = data.shippingContractsCompleted || 0;
+
+    for (const cb of data.customBuildings || []) {
+      const design = this.buildingCatalog.get(cb.designId);
+      if (design) this.city.placeCustomBuilding(cb.x, cb.z, design);
+    }
 
     bumpIdCounter(maxNumericSuffix([...(data.stations || []), ...(data.routes || [])].map(x => x.id)));
     bumpVehicleIdCounter(maxNumericSuffix((data.vehicles || []).map(v => v.id)));

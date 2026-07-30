@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GRID_SIZE, TILE_SIZE, ROAD_SPACING, ZONE, ZONE_COLORS, WORLD_SIZE } from './config.js';
+import { buildStructureMesh, buildVoxelMesh } from './buildings/buildingMeshBuilder.js';
 
 function mulberry32(seed) {
   let a = seed;
@@ -31,6 +32,8 @@ export class City {
     this.growthRadius = 2.6; // in block-distance units, grows via milestones
     this.scenario = { ...DEFAULT_SCENARIO, ...scenarioConfig };
     this._buildingsGroup = null;
+    this.customBuildings = new Map(); // "x_z" -> { x, z, design, group }
+    this._customBuildingsGroup = null;
 
     this._generateGrid();
   }
@@ -185,6 +188,7 @@ export class City {
   // which blocks had unlocked/matured so a loaded game looks like it did
   // when it was saved.
   regenerateFromSave(seed, growthRadius, blockStates, scenarioConfig) {
+    this._clearCustomBuildings();
     this.seed = seed;
     this.rng = mulberry32(seed);
     this.tiles = [];
@@ -215,6 +219,7 @@ export class City {
   // Starts a brand-new city from a hand-authored scenario preset (or the
   // default sandbox config if scenarioConfig is empty).
   regenerateWithScenario(seed, scenarioConfig = {}) {
+    this._clearCustomBuildings();
     this.seed = seed;
     this.rng = mulberry32(seed);
     this.scenario = { ...DEFAULT_SCENARIO, ...scenarioConfig };
@@ -282,6 +287,57 @@ export class City {
     return null;
   }
 
+  // ---------- custom (player-built) buildings ----------
+
+  canPlaceCustomBuilding(x, z) {
+    if (!this.inBounds(x, z)) return { ok: false, reason: 'Out of bounds.' };
+    if (!this.isBuildable(x, z)) return { ok: false, reason: 'Pick a developed residential, commercial, industrial, or landmark tile.' };
+    if (this.customBuildings.has(`${x}_${z}`)) return { ok: false, reason: 'This tile already has a custom building on it.' };
+    return { ok: true };
+  }
+
+  // Drops a saved Building Creator design onto a city tile, replacing the
+  // procedural building there. The tile keeps its zone type/population/jobs -
+  // only the visible building mesh is swapped for the player's own design.
+  placeCustomBuilding(x, z, design) {
+    const key = `${x}_${z}`;
+    const existing = this.customBuildings.get(key);
+    if (existing) this._disposeCustomBuilding(existing);
+
+    const wrapper = new THREE.Group();
+    wrapper.add(buildStructureMesh(design));
+    wrapper.add(buildVoxelMesh(design));
+    const center = this.tileCenterWorld(x, z);
+    wrapper.position.set(center.x, 0, center.z);
+
+    const entry = { x, z, design, group: wrapper };
+    this.customBuildings.set(key, entry);
+    this._customBuildingsGroup.add(wrapper);
+    this.rebuildMeshes(); // re-batch procedural buildings, excluding this tile
+    return entry;
+  }
+
+  removeCustomBuilding(x, z) {
+    const key = `${x}_${z}`;
+    const entry = this.customBuildings.get(key);
+    if (!entry) return;
+    this._disposeCustomBuilding(entry);
+    this.customBuildings.delete(key);
+    this.rebuildMeshes();
+  }
+
+  _disposeCustomBuilding(entry) {
+    this._customBuildingsGroup.remove(entry.group);
+    entry.group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+  }
+
+  _clearCustomBuildings() {
+    if (this._customBuildingsGroup) {
+      for (const entry of this.customBuildings.values()) this._disposeCustomBuilding(entry);
+    }
+    this.customBuildings.clear();
+  }
+
   demandZones() {
     const residential = [], jobsZones = [];
     for (let x = 0; x < this.size; x++) {
@@ -298,6 +354,8 @@ export class City {
 
   buildMeshes(scene) {
     this.scene = scene;
+    this._customBuildingsGroup = new THREE.Group();
+    this.scene.add(this._customBuildingsGroup);
     this.rebuildMeshes();
   }
 
@@ -355,7 +413,7 @@ export class City {
     this._windowMats = [];
 
     for (const type of buildingTypes) {
-      const tiles = (byType[type] || []);
+      const tiles = (byType[type] || []).filter(t => !this.customBuildings.has(`${t.x}_${t.z}`));
       if (!tiles.length) continue;
       const color = ZONE_COLORS[type];
       const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.85, flatShading: true });

@@ -19,6 +19,7 @@ import { SaveLoadSystem } from './saveLoad.js';
 import { CargoSystem, bumpCargoIdCounter } from './cargo.js';
 import { ShippingContractSystem } from './shippingContracts.js';
 import { BuildingEditor } from './buildings/buildingEditorUI.js';
+import { BuildingCatalog } from './buildings/buildingCatalog.js';
 import { allScenarios, exportScenario, importScenarioFromFile, deleteCustomScenario } from './scenarios.js';
 
 const canvas = document.getElementById('viewport');
@@ -60,7 +61,10 @@ const vehicleDesigner = new VehicleDesigner({ catalog, network, economy, ui });
 ui.setVehicleDesigner(vehicleDesigner);
 document.getElementById('btn-design-vehicle').addEventListener('click', () => vehicleDesigner.open());
 
-const buildingEditor = new BuildingEditor();
+const buildingCatalog = new BuildingCatalog();
+const buildingEditor = new BuildingEditor({ catalog: buildingCatalog, ui });
+ui.setBuildingCatalog(buildingCatalog);
+ui.setBuildingEditor(buildingEditor);
 document.getElementById('btn-build-creator').addEventListener('click', () => buildingEditor.open());
 
 const staffing = new Staffing(economy);
@@ -82,7 +86,7 @@ const newsTicker = new NewsTicker({
 
 const saveLoadSystem = new SaveLoadSystem({
   city, network, vehicleSystem, economy, timeSystem, eventSystem, contractSystem, staffing, ui, schematicView,
-  cargoSystem, shippingContractSystem,
+  cargoSystem, shippingContractSystem, buildingCatalog,
 });
 
 function fmtWhen(ts) {
