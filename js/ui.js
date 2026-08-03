@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { STATION_COST, VEHICLE_TYPES, CARGO_DEPOT_COST, CARGO_TYPES } from './config.js';
 import { REGULATION_PRESETS } from './designer/regulations.js';
-import { FREIGHT_CHASSIS_DEFS, freightChassisById } from './designer/freightChassisDefs.js';
-import { createDefaultFreightModel, computeFreightStats } from './designer/freightModel.js';
+import { freightChassisById } from './designer/freightChassisDefs.js';
+import { computeFreightStats } from './designer/freightModel.js';
 
 function fmtMoney(n) {
   const sign = n < 0 ? '-' : '';
@@ -445,9 +445,6 @@ export class UIController {
 
   _renderDepotPanel(depot) {
     const model = depot.modelId ? this.catalog.get(depot.modelId) : null;
-    const truckOptions = FREIGHT_CHASSIS_DEFS.filter(c => c.category === 'truck').map(c => `
-      <option value="${c.id}" ${model?.chassisId === c.id ? 'selected' : ''}>${c.name} (${c.cargoCapacityTons}t · ${fmtMoney(c.baseCostPerCar)})</option>
-    `).join('');
 
     const truckSection = model ? (() => {
       const stats = computeFreightStats(model);
@@ -456,10 +453,11 @@ export class UIController {
         <div class="row"><span>Carries</span><b>${stats.compatibleCargo.map(id => CARGO_TYPES[id]?.icon).join(' ')}</b></div>
         <div class="field"><label>Trucks: ${depot.truckCount} (${fmtMoney(stats.purchaseCost)} each)</label>
           <input type="range" id="depot-truck-count" min="0" max="4" value="${depot.truckCount}"></div>
+        <button class="action secondary" id="depot-change-truck">Change Truck Design</button>
       `;
     })() : `
-      <div class="field"><label>Truck type</label><select id="depot-chassis">${truckOptions}</select></div>
-      <button class="action" id="depot-assign">Buy First Truck</button>
+      <p>No truck assigned yet.</p>
+      <button class="action" id="depot-choose-truck">Choose a Truck</button>
     `;
 
     return `
@@ -483,18 +481,8 @@ export class UIController {
       this.cargoSystem._refreshDepotSign(depot);
     });
     panel.querySelector('#depot-delete')?.addEventListener('click', () => this.deleteDepot(depot.id));
-    panel.querySelector('#depot-assign')?.addEventListener('click', () => {
-      const chassisId = panel.querySelector('#depot-chassis').value;
-      const chassis = freightChassisById(chassisId);
-      const model = createDefaultFreightModel(chassisId);
-      const saved = this.catalog.save(model);
-      const cost = computeFreightStats(saved).purchaseCost;
-      if (!this.economy.canAfford(cost)) { this.showToast('Not enough budget for a truck.'); return; }
-      this.economy.spend(cost);
-      this.cargoSystem.assignModelToDepot(depot, saved, 1);
-      this.showToast(`Bought a ${chassis.name} (${fmtMoney(cost)})`);
-      this.selectDepot(depot.id);
-    });
+    panel.querySelector('#depot-choose-truck')?.addEventListener('click', () => this._openTruckPicker(depot));
+    panel.querySelector('#depot-change-truck')?.addEventListener('click', () => this._openTruckPicker(depot));
     const countSlider = panel.querySelector('#depot-truck-count');
     countSlider?.addEventListener('change', (e) => {
       const model = this.catalog.get(depot.modelId);
@@ -507,6 +495,48 @@ export class UIController {
       }
       this.cargoSystem.assignModelToDepot(depot, model, newCount);
       this.selectDepot(depot.id);
+    });
+  }
+
+  // Mirrors _openVehiclePicker()'s pattern for routes: pick a saved design
+  // from the catalog, or jump into the full Vehicle Designer to make a new
+  // one (folded into the same designer overlay passenger vehicles use -
+  // see designerUI.js's openNewFreight/freight tab branches).
+  _openTruckPicker(depot) {
+    const models = this.catalog.list().filter(m => m.kind === 'freight');
+    const cards = models.map(m => {
+      const chassis = freightChassisById(m.chassisId);
+      const stats = computeFreightStats(m);
+      return `
+        <div class="showroom-card">
+          <img src="${m.thumbnail || ''}" class="showroom-thumb ${m.thumbnail ? '' : 'hidden'}">
+          <div class="showroom-name">${m.name}</div>
+          <div class="showroom-meta">${chassis.name} · ${stats.capacityTonsPerCar}t · ${fmtMoney(stats.purchaseCost)}</div>
+          <button class="action secondary" data-pick-truck="${m.id}">Select</button>
+        </div>`;
+    }).join('') || '<p>No truck designs yet - use "Design a New Truck" below.</p>';
+
+    this.openModal('Choose a Truck', `
+      <div class="showroom-grid">${cards}</div>
+      <button class="action" id="picker-truck-new" style="margin-top:10px">＋ Design a New Truck</button>
+    `);
+    this.dom.modalContent.querySelectorAll('[data-pick-truck]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const model = this.catalog.get(btn.dataset.pickTruck);
+        const stats = computeFreightStats(model);
+        const truckCount = Math.max(1, depot.truckCount);
+        const cost = stats.purchaseCost * truckCount;
+        if (!this.economy.canAfford(cost)) { this.showToast('Not enough budget for that fleet.'); return; }
+        this.economy.spend(cost);
+        this.cargoSystem.assignModelToDepot(depot, model, truckCount);
+        this.showToast(`Assigned ${model.name} to ${depot.name} (${fmtMoney(cost)}).`);
+        this.closeModal();
+        this.selectDepot(depot.id);
+      });
+    });
+    document.getElementById('picker-truck-new').addEventListener('click', () => {
+      this.closeModal();
+      this.vehicleDesigner?.openNewFreight();
     });
   }
 

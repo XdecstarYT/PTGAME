@@ -1,8 +1,10 @@
-import { VEHICLE_TYPES, DEFAULT_REGULATION_ID } from '../config.js';
+import { VEHICLE_TYPES, DEFAULT_REGULATION_ID, CARGO_TYPES } from '../config.js';
 import { CHASSIS_DEFS, chassisById, chassisForCategory, effectiveChassis, maxDoorCountFor } from './chassisDefs.js';
+import { FREIGHT_CHASSIS_DEFS, freightChassisById, freightChassisForCategory } from './freightChassisDefs.js';
 import { powertrainsForCategory, powertrainById } from './powertrainDefs.js';
 import { REGULATION_PRESETS, regulationById } from './regulations.js';
 import { createDefaultModel, createDefaultFloorPlan, computeStats } from './vehicleModel.js';
+import { createDefaultFreightModel, computeFreightStats } from './freightModel.js';
 import { FEATURE_DEFS, MAX_PRIORITY_SEATS } from './featureDefs.js';
 import { InteriorEditor } from './interiorEditor.js';
 import { DesignerScene } from './designerScene.js';
@@ -47,6 +49,8 @@ export class VehicleDesigner {
     this.model = null;
     this.activeDeck = 0;
     this.roiAssumption = { ridership: null, fare: economy.fare };
+    this._roiFreightShipments = null;
+    this._roiFreightValuePerTon = null;
     this.isOpen = false;
 
     this._wireChrome();
@@ -55,7 +59,10 @@ export class VehicleDesigner {
   _wireChrome() {
     this.dom.close.addEventListener('click', () => this.close());
     this.dom.showroomBtn.addEventListener('click', () => this.openShowroom());
-    this.dom.newBtn.addEventListener('click', () => this.newDesign());
+    this.dom.newBtn.addEventListener('click', () => {
+      if (this._isFreight()) this.openNewFreight();
+      else this.newDesign();
+    });
     this.dom.saveBtn.addEventListener('click', () => this.save());
     for (const btn of this.dom.tabButtons) {
       btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
@@ -97,6 +104,21 @@ export class VehicleDesigner {
     this._refreshAll();
   }
 
+  // Entry point for freight: always starts a fresh design (unlike open(),
+  // which resumes whatever's in progress) since it's reached from a
+  // dedicated "design a truck" action, not the general designer button.
+  openNewFreight(chassisId) {
+    if (this.interiorWalk.active) this.interiorWalk.exit();
+    const chassis = chassisId ? freightChassisById(chassisId) : FREIGHT_CHASSIS_DEFS[0];
+    this.model = createDefaultFreightModel(chassis.id);
+    this.activeDeck = 0;
+    this.isOpen = true;
+    this.dom.layer.classList.remove('hidden');
+    this.switchTab('chassis');
+    this._refreshAll();
+    this.scene._resizeToContainer();
+  }
+
   loadForEdit(modelId) {
     if (this.interiorWalk.active) this.interiorWalk.exit();
     const src = this.catalog.get(modelId);
@@ -111,12 +133,14 @@ export class VehicleDesigner {
 
   // Designs saved before the Features tab / operator branding existed won't
   // have these fields - fill in safe defaults rather than special-casing
-  // "undefined" everywhere they're read.
+  // "undefined" everywhere they're read. Freight designs have no floor
+  // plan/features/custom-dimension concepts at all, so they skip this.
   _normalizeModel() {
+    if (this.model.livery.operatorName === undefined) this.model.livery.operatorName = '';
+    if (this.model.kind === 'freight') return;
     if (!this.model.features) this.model.features = {};
     for (const f of FEATURE_DEFS) if (this.model.features[f.id] === undefined) this.model.features[f.id] = false;
     if (this.model.features.prioritySeats === undefined) this.model.features.prioritySeats = 0;
-    if (this.model.livery.operatorName === undefined) this.model.livery.operatorName = '';
     const base = this._baseChassis();
     if (this.model.customLengthUnits === undefined) this.model.customLengthUnits = base.lengthUnits;
     if (this.model.customGridRows === undefined) this.model.customGridRows = base.gridRows;
@@ -126,21 +150,34 @@ export class VehicleDesigner {
   }
 
   switchTab(tab) {
+    // Freight designs have no floor plan or amenities - Interior/Features
+    // are meaningless for them, so redirect to Chassis rather than render a
+    // tab that assumes fields the model doesn't have.
+    if (this._isFreight() && (tab === 'interior' || tab === 'features')) tab = 'chassis';
     this.activeTab = tab;
     for (const b of this.dom.tabButtons) b.classList.toggle('active', b.dataset.tab === tab);
     this._renderTab();
   }
 
+  _isFreight() { return this.model?.kind === 'freight'; }
+
   // The base preset the model started from - used for category/manufacturer/
   // consist limits and the custom-dimension slider bounds, none of which
   // change with the player's length/width/door sliders.
-  _baseChassis() { return chassisById(this.model.chassisId); }
+  _baseChassis() { return this._isFreight() ? freightChassisById(this.model.chassisId) : chassisById(this.model.chassisId); }
   // The base preset with the player's custom length/width/door-count sliders
   // applied - this is "the chassis" everywhere stats/mesh/interior care about
-  // actual physical size (see chassisDefs.js's effectiveChassis).
-  _chassis() { return effectiveChassis(this.model); }
+  // actual physical size (see chassisDefs.js's effectiveChassis). Freight
+  // chassis have no such sliders, so this is just the base preset for them.
+  _chassis() { return this._isFreight() ? freightChassisById(this.model.chassisId) : effectiveChassis(this.model); }
 
   _stats() {
+    if (this._isFreight()) {
+      return computeFreightStats(this.model, {
+        shipmentsPerDayAssumption: this._roiFreightShipments,
+        valuePerTonAssumption: this._roiFreightValuePerTon,
+      });
+    }
     return computeStats(this.model, {
       activeRegulationId: this.economy.activeRegulationId,
       fareAssumption: this.roiAssumption.fare,
@@ -148,7 +185,18 @@ export class VehicleDesigner {
     });
   }
 
+  // Interior/Features only make sense for passenger designs; Walk Interior
+  // needs an actual floor plan to walk around in.
+  _updateChromeForKind() {
+    const freight = this._isFreight();
+    for (const b of this.dom.tabButtons) {
+      if (b.dataset.tab === 'interior' || b.dataset.tab === 'features') b.classList.toggle('hidden', freight);
+    }
+    this.dom.walkBtn.classList.toggle('hidden', freight);
+  }
+
   _refreshAll() {
+    this._updateChromeForKind();
     this.scene.setVehicle(this.model, this._chassis());
     this._renderTab();
     this._renderStats();
@@ -163,11 +211,103 @@ export class VehicleDesigner {
   // ---------------- tabs ----------------
 
   _renderTab() {
+    if (this._isFreight()) {
+      const fn = { chassis: this._tabChassisFreight, livery: this._tabLiveryFreight, regs: this._tabRegsFreight }[this.activeTab] || this._tabChassisFreight;
+      fn.call(this);
+      return;
+    }
     const fn = {
       chassis: this._tabChassis, interior: this._tabInterior, livery: this._tabLivery,
       features: this._tabFeatures, regs: this._tabRegs,
     }[this.activeTab];
     fn.call(this);
+  }
+
+  // ---------------- freight tabs ----------------
+
+  _tabChassisFreight() {
+    const cats = ['truck', 'freight_rail'];
+    const catLabel = { truck: 'Truck', freight_rail: 'Freight Rail' };
+    const sections = cats.map(cat => {
+      const cards = freightChassisForCategory(cat).map(c => `
+        <button class="chassis-card ${this.model.chassisId === c.id ? 'active' : ''}" data-freight-chassis="${c.id}">
+          <div class="chassis-card-name">${c.name}</div>
+          <div class="chassis-card-meta">${c.manufacturer} · ${c.cargoCapacityTons}t · ${c.compatibleCargo.map(id => CARGO_TYPES[id]?.icon).join(' ')}</div>
+          <div class="chassis-card-meta">${fmtMoney(c.baseCostPerCar)}/car · ${c.baseSpeed} spd</div>
+        </button>`).join('');
+      return `<h4>${catLabel[cat]}</h4><div class="chassis-card-row">${cards}</div>`;
+    }).join('');
+
+    const chassis = this._chassis();
+    const powertrains = powertrainsForCategory(chassis.category).map(p => `
+      <button class="action ${this.model.powertrainId === p.id ? '' : 'secondary'}" data-powertrain="${p.id}">${p.label}</button>
+    `).join('');
+
+    this.dom.tabContent.innerHTML = `
+      ${sections}
+      <h4>Powertrain</h4>
+      <div>${powertrains}</div>
+      <p class="designer-hint">Freight chassis carry a fixed cargo type mix and body style - pick the family that matches what you plan to haul.</p>
+    `;
+
+    this.dom.tabContent.querySelectorAll('[data-freight-chassis]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const newChassis = freightChassisById(btn.dataset.freightChassis);
+        const sameCategory = newChassis.category === this._chassis().category;
+        this.model.chassisId = newChassis.id;
+        this.model.consistCars = Math.max(newChassis.minConsist, Math.min(newChassis.maxConsist, this.model.consistCars));
+        if (!sameCategory || !powertrainsForCategory(newChassis.category).some(p => p.id === this.model.powertrainId)) {
+          this.model.powertrainId = powertrainsForCategory(newChassis.category)[0].id;
+        }
+        this._refreshAll();
+      });
+    });
+    this.dom.tabContent.querySelectorAll('[data-powertrain]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.model.powertrainId = btn.dataset.powertrain;
+        this._refreshAll();
+      });
+    });
+  }
+
+  _tabLiveryFreight() {
+    const chassis = this._chassis();
+    this.dom.tabContent.innerHTML = `
+      <h4>Livery</h4>
+      <div class="field"><label>Primary color</label><input type="color" id="livery-primary" value="${this.model.livery.primary}"></div>
+      <div class="field"><label>Secondary / stripe color</label><input type="color" id="livery-secondary" value="${this.model.livery.secondary}"></div>
+      <div class="field"><label>Operator name (shown on the side of the vehicle)</label>
+        <input type="text" id="livery-operator" maxlength="24" placeholder="${chassis.manufacturer}" value="${this.model.livery.operatorName || ''}"></div>
+      <h4>Consist</h4>
+      <div class="field"><label>Cars: ${this.model.consistCars} (${chassis.minConsist}-${chassis.maxConsist} allowed)</label>
+        <input type="range" id="consist-slider" min="${chassis.minConsist}" max="${chassis.maxConsist}" value="${this.model.consistCars}"></div>
+    `;
+    document.getElementById('livery-primary').addEventListener('input', (e) => { this.model.livery.primary = e.target.value; this.scene.setVehicle(this.model, chassis); this._renderStats(); });
+    document.getElementById('livery-secondary').addEventListener('input', (e) => { this.model.livery.secondary = e.target.value; this.scene.setVehicle(this.model, chassis); this._renderStats(); });
+    document.getElementById('livery-operator').addEventListener('input', (e) => { this.model.livery.operatorName = e.target.value; this.scene.setVehicle(this.model, chassis); });
+    document.getElementById('consist-slider').addEventListener('change', (e) => { this.model.consistCars = Number(e.target.value); this.scene.setVehicle(this.model, chassis); this._tabLiveryFreight(); this._renderStats(); });
+  }
+
+  _tabRegsFreight() {
+    const stats = this._stats();
+    this.dom.tabContent.innerHTML = `
+      <h4>Cost / ROI assumptions</h4>
+      <div class="field"><label>Assumed shipments/day: ${stats.assumedShipmentsPerDay}</label>
+        <input type="range" id="roi-shipments" min="1" max="${Math.max(10, stats.assumedShipmentsPerDay * 4)}" value="${stats.assumedShipmentsPerDay}"></div>
+      <div class="field"><label>Assumed value/ton: ${fmtMoney(stats.assumedValuePerTon)}</label>
+        <input type="range" id="roi-valuepertons" min="5" max="100" step="5" value="${stats.assumedValuePerTon}"></div>
+      <div class="row"><span>Estimated payback period</span><b>${stats.paybackDays != null ? stats.paybackDays + ' days' : 'never (loses money)'}</b></div>
+    `;
+    document.getElementById('roi-shipments').addEventListener('change', (e) => {
+      this._roiFreightShipments = Number(e.target.value);
+      this._tabRegsFreight();
+      this._renderStats();
+    });
+    document.getElementById('roi-valuepertons').addEventListener('change', (e) => {
+      this._roiFreightValuePerTon = Number(e.target.value);
+      this._tabRegsFreight();
+      this._renderStats();
+    });
   }
 
   _tabChassis() {
@@ -427,6 +567,20 @@ export class VehicleDesigner {
 
   _renderStats() {
     const s = this._stats();
+    if (this._isFreight()) {
+      this.dom.stats.innerHTML = `
+        <div class="row"><span>${s.manufacturer} · ${s.chassisName}</span><b>${s.powertrainLabel}</b></div>
+        <div class="row"><span>Cargo capacity</span><b>${s.capacityTonsTotal}t (${s.capacityTonsPerCar}t/car)</b></div>
+        <div class="row"><span>Carries</span><b>${s.compatibleCargo.map(id => CARGO_TYPES[id]?.icon).join(' ')}</b></div>
+        <div class="row"><span>Purchase cost</span><b>${fmtMoney(s.purchaseCost)}</b></div>
+        <div class="row"><span>Running cost/day</span><b>${fmtMoney(s.runningCostPerDay)}</b></div>
+        <div class="row"><span>Top speed</span><b>${s.topSpeed}</b></div>
+        <div class="row"><span>Reliability</span><b>${s.reliabilityBase}</b></div>
+        <div class="row"><span>Emissions</span><b>${s.emissionsScore}</b></div>
+        <div class="row"><span>Est. payback period</span><b>${s.paybackDays != null ? s.paybackDays + ' days' : 'never (loses money)'}</b></div>
+      `;
+      return;
+    }
     this.dom.stats.innerHTML = `
       <div class="row"><span>${s.manufacturer} · ${s.chassisName}</span><b>${s.powertrainLabel}</b></div>
       <div class="row"><span>Capacity</span><b>${s.capacityTotal} (${s.capacitySeatedPerCar}/car seated)</b></div>
@@ -469,6 +623,23 @@ export class VehicleDesigner {
   openShowroom() {
     const models = this.catalog.list();
     const cards = models.map(m => {
+      if (m.kind === 'freight') {
+        const chassis = freightChassisById(m.chassisId);
+        const stats = computeFreightStats(m, {});
+        return `
+        <div class="showroom-card">
+          <img src="${m.thumbnail || ''}" class="showroom-thumb ${m.thumbnail ? '' : 'hidden'}">
+          <div class="showroom-name">${m.name}</div>
+          <div class="showroom-meta">Freight · ${chassis.name} · ${stats.powertrainLabel}</div>
+          <div class="showroom-meta">${stats.capacityTonsTotal}t · ${fmtMoney(stats.purchaseCost)} · ${stats.compatibleCargo.map(id => CARGO_TYPES[id]?.icon).join(' ')}</div>
+          <div class="showroom-actions">
+            <button class="action secondary" data-edit="${m.id}">Edit</button>
+            <button class="action secondary" data-clone="${m.id}">Clone</button>
+            <button class="action secondary" data-export="${m.id}">Export</button>
+            <button class="action danger" data-delete="${m.id}">Delete</button>
+          </div>
+        </div>`;
+      }
       const chassis = chassisById(m.chassisId);
       const stats = computeStats(m, { activeRegulationId: this.economy.activeRegulationId });
       return `
@@ -501,8 +672,10 @@ export class VehicleDesigner {
     content.querySelectorAll('[data-export]').forEach(b => b.addEventListener('click', () => this.catalog.downloadExport(b.dataset.export)));
     content.querySelectorAll('[data-delete]').forEach(b => b.addEventListener('click', () => {
       const id = b.dataset.delete;
-      const inUse = [...this.network.routes.values()].some(r => r.modelId === id);
-      if (inUse) { this.ui.showToast('Cannot delete - a route is currently using this design.'); return; }
+      const inUseByRoute = [...this.network.routes.values()].some(r => r.modelId === id);
+      const inUseByDepot = [...(this.ui.cargoSystem?.depots.values() || [])].some(d => d.modelId === id);
+      if (inUseByRoute) { this.ui.showToast('Cannot delete - a route is currently using this design.'); return; }
+      if (inUseByDepot) { this.ui.showToast('Cannot delete - a depot is currently using this design.'); return; }
       this.catalog.remove(id);
       this.openShowroom();
     }));

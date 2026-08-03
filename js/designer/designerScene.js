@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { buildExteriorMesh, applyWear, setLights } from './vehicleMeshBuilder.js';
+import { buildFreightExteriorMesh } from './freightMeshBuilder.js';
 
 const ENV_PRESETS = ['daylight', 'overcast', 'night', 'rain'];
 
@@ -64,7 +65,9 @@ export class DesignerScene {
       this.scene.remove(this.vehicleGroup);
       this.vehicleGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
     }
-    this.vehicleGroup = buildExteriorMesh(model, chassis);
+    this.vehicleGroup = model.kind === 'freight'
+      ? buildFreightExteriorMesh(model, chassis)
+      : buildExteriorMesh(model, chassis);
     this.scene.add(this.vehicleGroup);
     this._applyEnvironment();
     this._applyWear();
