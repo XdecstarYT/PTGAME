@@ -1,7 +1,14 @@
 import { famousStationDesigns } from './famousStations.js';
+import { famousStationDesignsBatch2 } from './famousStationsBatch2.js';
 
 const STORAGE_KEY = 'ptgame_station_catalog_v1';
-const SEEDED_FLAG_KEY = 'ptgame_station_catalog_seeded_v1';
+// Each starter-gallery batch gets its own persisted flag so batches added
+// later (batch 2, batch 3, ...) still seed once for players who already
+// have batch 1, without re-seeding batch 1 itself.
+const SEED_BATCHES = [
+  { flagKey: 'ptgame_station_catalog_seeded_v1', designsFn: famousStationDesigns },
+  { flagKey: 'ptgame_station_catalog_seeded_v2', designsFn: famousStationDesignsBatch2 },
+];
 let _idCounter = 1;
 function nextId() { return `stn_${Date.now().toString(36)}_${_idCounter++}`; }
 
@@ -34,25 +41,31 @@ export class StationCatalog {
   }
 
   // One-time starter gallery of famous-station-inspired designs (see
-  // famousStations.js), gated on a persisted flag rather than "catalog is
-  // currently empty" - so a player who deliberately deletes all of them
-  // doesn't have them silently reappear on the next reload.
+  // famousStations.js/famousStationsBatch2.js), gated on a persisted flag
+  // per batch rather than "catalog is currently empty" - so a player who
+  // deliberately deletes some of them doesn't have them silently reappear
+  // on the next reload, while a new batch still reaches existing players.
   _seedFamousStationsIfNeeded() {
-    try {
-      if (localStorage.getItem(SEEDED_FLAG_KEY)) return;
-    } catch (e) {
-      // localStorage unavailable - fall through and seed in-memory for this
-      // session anyway, just without a persisted flag to prevent a re-seed.
+    let persisted = false;
+    for (const { flagKey, designsFn } of SEED_BATCHES) {
+      try {
+        if (localStorage.getItem(flagKey)) continue;
+      } catch (e) {
+        // localStorage unavailable - fall through and seed in-memory for
+        // this session anyway, just without a persisted flag to prevent a
+        // re-seed (there's nothing to persist either way in that case).
+      }
+      for (const design of designsFn()) {
+        design.id = nextId();
+        design.createdAt = Date.now();
+        this.designs.set(design.id, design);
+      }
+      persisted = true;
+      try { localStorage.setItem(flagKey, '1'); } catch (e) {
+        // storage unavailable - nothing to do, this session just seeds once
+      }
     }
-    for (const design of famousStationDesigns()) {
-      design.id = nextId();
-      design.createdAt = Date.now();
-      this.designs.set(design.id, design);
-    }
-    this._persist();
-    try { localStorage.setItem(SEEDED_FLAG_KEY, '1'); } catch (e) {
-      // storage unavailable - nothing to do, this session just seeds once
-    }
+    if (persisted) this._persist();
   }
 
   _persist() {
