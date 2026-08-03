@@ -8,6 +8,30 @@ function cellCenterLocal(cols, rows, c, r) {
   };
 }
 
+// World-space position of a structure grid's (0,0) cell's near/top-left
+// corner - the counterpart cellCenterLocal() offsets from. Shared by the
+// freeform click-placement engine (buildingEditorUI.js) to convert a
+// raycast hit point back into a {r,c} cell via worldPointToGridCell().
+export function structureGridOrigin(design) {
+  return { x: -design.cols / 2 * BUILD_CELL_SIZE, z: -design.rows / 2 * BUILD_CELL_SIZE };
+}
+
+// A thin, mostly-transparent pick plane spanning one floor's whole
+// footprint, tagged so the freeform placement engine can raycast against it
+// to resolve clicks on still-empty cells (there's no real mesh there to
+// click on otherwise). Rendered with a faint tint so the currently-active
+// build floor also reads as a clear visual affordance.
+export function buildFloorPickPlane(design, levelIndex) {
+  const w = design.cols * BUILD_CELL_SIZE, d = design.rows * BUILD_CELL_SIZE;
+  const geo = new THREE.PlaneGeometry(w, d);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x66ccff, transparent: true, opacity: 0.07, side: THREE.DoubleSide, depthWrite: false });
+  const plane = new THREE.Mesh(geo, mat);
+  plane.rotation.x = -Math.PI / 2;
+  plane.position.y = levelIndex * LEVEL_HEIGHT_M + 0.02;
+  plane.userData = { isBuildPlane: true, levelIndex };
+  return plane;
+}
+
 // Builds the prefab "structure" shell for a building design: walls/windows/
 // doors/pillars extruded per floor, floor slabs, and roof caps, all driven
 // by the player's own per-cell paint choices - contrast with the station
@@ -41,38 +65,45 @@ export function buildStructureMesh(design) {
         const id = level.grid[r][c];
         if (id === 'empty') continue;
         const { x, z } = cellCenterLocal(design.cols, design.rows, c, r);
+        // Tagged onto every mesh built for this cell (a cell can produce more
+        // than one, e.g. a window's frame+pane) so the freeform placement
+        // engine can resolve a raycast hit straight back to {levelIndex,r,c}
+        // without any coordinate math, the same way voxels already do via
+        // userData.voxelKey.
+        const cellTag = { isStructureCell: true, levelIndex: li, row: r, col: c };
+        const tag = (mesh) => { mesh.userData = cellTag; return mesh; };
 
         if (id === 'wall' || id === 'pillar') {
           const size = id === 'pillar' ? cellSize * 0.4 : cellSize;
-          const box = new THREE.Mesh(new THREE.BoxGeometry(size, LEVEL_HEIGHT_M, size), mat);
+          const box = tag(new THREE.Mesh(new THREE.BoxGeometry(size, LEVEL_HEIGHT_M, size), mat));
           box.position.set(x, baseY + LEVEL_HEIGHT_M / 2, z);
           box.castShadow = true; box.receiveShadow = true;
           group.add(box);
         } else if (id === 'window') {
-          const frame = new THREE.Mesh(new THREE.BoxGeometry(cellSize, LEVEL_HEIGHT_M, cellSize * 0.92), mat);
+          const frame = tag(new THREE.Mesh(new THREE.BoxGeometry(cellSize, LEVEL_HEIGHT_M, cellSize * 0.92), mat));
           frame.position.set(x, baseY + LEVEL_HEIGHT_M / 2, z);
           frame.castShadow = true; frame.receiveShadow = true;
           group.add(frame);
-          const pane = new THREE.Mesh(new THREE.BoxGeometry(cellSize * 0.8, LEVEL_HEIGHT_M * 0.6, 0.06), glassMat);
+          const pane = tag(new THREE.Mesh(new THREE.BoxGeometry(cellSize * 0.8, LEVEL_HEIGHT_M * 0.6, 0.06), glassMat));
           pane.position.set(x, baseY + LEVEL_HEIGHT_M * 0.55, z);
           pane.receiveShadow = true;
           group.add(pane);
         } else if (id === 'door') {
-          const frame = new THREE.Mesh(new THREE.BoxGeometry(cellSize, LEVEL_HEIGHT_M, cellSize * 0.92), mat);
+          const frame = tag(new THREE.Mesh(new THREE.BoxGeometry(cellSize, LEVEL_HEIGHT_M, cellSize * 0.92), mat));
           frame.position.set(x, baseY + LEVEL_HEIGHT_M / 2, z);
           frame.castShadow = true; frame.receiveShadow = true;
           group.add(frame);
-          const door = new THREE.Mesh(new THREE.BoxGeometry(cellSize * 0.55, LEVEL_HEIGHT_M * 0.75, 0.08), doorMat);
+          const door = tag(new THREE.Mesh(new THREE.BoxGeometry(cellSize * 0.55, LEVEL_HEIGHT_M * 0.75, 0.08), doorMat));
           door.position.set(x, baseY + LEVEL_HEIGHT_M * 0.375, z);
           door.receiveShadow = true;
           group.add(door);
         } else if (id === 'floor') {
-          const slab = new THREE.Mesh(new THREE.BoxGeometry(cellSize, 0.2, cellSize), mat);
+          const slab = tag(new THREE.Mesh(new THREE.BoxGeometry(cellSize, 0.2, cellSize), mat));
           slab.position.set(x, baseY + 0.1, z);
           slab.receiveShadow = true;
           group.add(slab);
         } else if (id === 'roof_flat') {
-          const slab = new THREE.Mesh(new THREE.BoxGeometry(cellSize, 0.25, cellSize), roofMat);
+          const slab = tag(new THREE.Mesh(new THREE.BoxGeometry(cellSize, 0.25, cellSize), roofMat));
           slab.position.set(x, baseY + 0.125, z);
           slab.castShadow = true; slab.receiveShadow = true;
           group.add(slab);
@@ -85,7 +116,7 @@ export function buildStructureMesh(design) {
           const geo = new THREE.ExtrudeGeometry(shape, { depth: cellSize, bevelEnabled: false });
           geo.rotateX(-Math.PI / 2);
           geo.translate(0, 0, cellSize / 2);
-          const slope = new THREE.Mesh(geo, roofMat);
+          const slope = tag(new THREE.Mesh(geo, roofMat));
           slope.position.set(x, baseY, z - cellSize / 2);
           slope.castShadow = true; slope.receiveShadow = true;
           group.add(slope);

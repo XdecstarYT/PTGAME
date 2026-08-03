@@ -583,8 +583,8 @@ html, body {
 .building-level-tab.add-level { color: #9fd18f; border-style: dashed; }
 
 #building-grid-canvas, #station-grid-canvas {
-  width: 100%; height: 240px; background: #10131a; border: 1px solid var(--border);
-  border-radius: 8px; cursor: crosshair; touch-action: none;
+  width: 100%; height: 160px; background: #10131a; border: 1px solid var(--border);
+  border-radius: 8px; cursor: default; touch-action: none;
 }
 
 /* Showroom + comparison (rendered inside the shared #modal-content) */

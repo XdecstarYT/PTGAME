@@ -1,19 +1,22 @@
 import {
   STATION_DESIGN_TYPES, STATION_SIZE_TIERS, STATION_INTERIOR_OBJECTS, STATION_ARCHITECTURE_STYLES,
-  stationDesignType, stationTier, stationInteriorObject, stationArchitectureStyle, stationDesignCost,
+  LAYOUT_CELL_SIZE, stationDesignType, stationTier, stationInteriorObject, stationArchitectureStyle, stationDesignCost,
 } from './stationDefs.js';
 import { createDefaultStationDesign, addStationLevel, removeStationLevel } from './stationModel.js';
 import { computeStationStats, computeStationShopRevenue } from './stationStatEngine.js';
+import { interiorOrigin } from './stationMeshBuilder.js';
 import { StationScene } from './stationScene.js';
 import { StationWalkController } from './stationWalk.js';
+import { FreeformClickPicker, worldPointToGridCell } from '../shared/freeformPlacement.js';
 
-// In-game Station Designer: pick a transit type + size tier, then paint
-// platforms/entrances/circulation/amenities per level on a 2D grid (the same
-// canvas-paint interaction as the Building Creator's Structure tab), with a
-// live 3D shell preview and live capacity/congestion/accessibility stats.
-// A pragmatic, from-scratch bridge for the standalone station-builder tool's
-// design concepts (see js/stations/stationDefs.js/stationStatEngine.js) - not
-// a port of that tool's full 3D layout editor/architecture/furniture system.
+// In-game Station Designer: pick a transit type + size tier, then place
+// platforms/entrances/circulation/amenities/shops per level by clicking
+// directly in the 3D preview, Bloxburg-style (the same freeform placement
+// engine the Building Creator's Structure tab uses), with a live
+// interior/exterior preview and live capacity/congestion/accessibility
+// stats. A pragmatic, from-scratch bridge for the standalone station-builder
+// tool's design concepts (see js/stations/stationDefs.js/stationStatEngine.js)
+// - not a port of that tool's full 3D layout editor system.
 export class StationDesigner {
   constructor({ catalog, ui } = {}) {
     this.catalog = catalog;
@@ -34,12 +37,13 @@ export class StationDesigner {
     this.scene = new StationScene(this.dom.canvas);
     this.walk = new StationWalkController({
       scene: this.scene,
-      onExit: () => this.dom.walkHud.classList.add('hidden'),
+      onExit: () => { this.dom.walkHud.classList.add('hidden'); this._syncSceneView(); },
     });
     this.isOpen = false;
     this.design = null;
     this.activeLevel = 0;
     this.brush = 'platform';
+    this.viewMode = 'interior'; // 'interior' (build here) | 'exterior' (check the outside look)
     this.onSave = null; // optional callback(savedDesign) - set by whoever opened the designer for a placement flow
 
     this.dom.close.addEventListener('click', () => this.close());
@@ -47,10 +51,21 @@ export class StationDesigner {
     this.dom.newBtn.addEventListener('click', () => this.newDesign());
     this.dom.saveBtn.addEventListener('click', () => this.save());
     this.dom.walkBtn.addEventListener('click', () => {
+      this.scene.clearInteriorLevel();
       this.walk.enter(this.design, this.activeLevel);
       this.dom.walkHud.classList.remove('hidden');
     });
     this.dom.walkExitBtn.addEventListener('click', () => this.walk.exit());
+
+    // One shared click-vs-drag picker for the whole 3D viewport - resolves
+    // against the interior room's furniture/floor (only meaningful while
+    // viewMode is 'interior' and walk mode isn't active; _handleLayoutClick
+    // guards both).
+    this.picker = new FreeformClickPicker({
+      canvas: this.dom.canvas,
+      raycaster: (ndcX, ndcY) => this.scene.raycastInterior(ndcX, ndcY),
+    });
+    this.picker.onClick = (hit) => this._handleLayoutClick(hit);
   }
 
   open(onSave = null) {
@@ -91,8 +106,38 @@ export class StationDesigner {
   }
 
   _refreshAll() {
-    this.scene.setDesign(this.design);
+    this._syncSceneView();
     this._renderTab();
+    this._renderStats();
+  }
+
+  // Swaps the live 3D preview between the small stylized exterior shell and
+  // the real, full-size interior room for whichever level is active -
+  // Interior is the default since that's what freeform placement clicks
+  // resolve against; Exterior lets you check the outside look (architecture
+  // style, footprint) any time without leaving the editor.
+  _syncSceneView() {
+    if (this.viewMode === 'interior') this.scene.setInteriorLevel(this.design, this.activeLevel);
+    else this.scene.setDesign(this.design);
+  }
+
+  // Layout tab's freeform placement: click an existing piece (resolved
+  // directly via its userData tag) or click the always-present floor
+  // (resolved via worldPointToGridCell) to paint the current brush there.
+  _handleLayoutClick(hit) {
+    if (this.walk.active || this.viewMode !== 'interior' || !hit) return;
+    const ud = hit.object.userData;
+    let r, c;
+    if (ud.isInteriorCell) { ({ row: r, col: c } = ud); }
+    else if (ud.isInteriorFloor) { ({ r, c } = worldPointToGridCell(hit.point, interiorOrigin(this.design, this.activeLevel), LAYOUT_CELL_SIZE)); }
+    else return;
+    const level = this.design.levels[this.activeLevel];
+    const rows = level.grid.length, cols = level.grid[0].length;
+    if (r < 0 || c < 0 || r >= rows || c >= cols) return;
+    if (level.grid[r][c] === this.brush) return;
+    level.grid[r][c] = this.brush;
+    this._drawGrid();
+    this._syncSceneView();
     this._renderStats();
   }
 
@@ -126,6 +171,11 @@ export class StationDesigner {
       <button class="piece-brush ${this.brush === p.id ? 'active' : ''}" data-piece="${p.id}">${p.icon} ${p.name}</button>
     `).join('');
 
+    const viewButtons = `
+      <button class="piece-brush ${this.viewMode === 'interior' ? 'active' : ''}" data-view-mode="interior">🚉 Interior (build here)</button>
+      <button class="piece-brush ${this.viewMode === 'exterior' ? 'active' : ''}" data-view-mode="exterior">🏢 Exterior look</button>
+    `;
+
     this.dom.tabContent.innerHTML = `
       <h4>Station Type</h4>
       <div class="piece-brush-row">${typeButtons}</div>
@@ -135,10 +185,12 @@ export class StationDesigner {
       <div class="building-level-tabs">${levelTabs}${addLevelBtn}${removeLevelBtn}</div>
       <h4>Architecture Style</h4>
       <div class="material-swatch-row">${styleButtons}</div>
-      <h4>Paint</h4>
+      <h4>Preview</h4>
+      <div class="piece-brush-row">${viewButtons}</div>
+      <h4>Place</h4>
       <div class="piece-brush-row">${pieceButtons}</div>
       <canvas id="station-grid-canvas"></canvas>
-      <p class="designer-hint">Click, or click-drag, to paint the current level. Platforms need entrances/gates and (for multi-level hubs) an elevator to stay accessible.</p>
+      <p class="designer-hint">Switch to Interior and click a spot in the 3D preview (right) to place the selected piece, Bloxburg-style - click an existing piece to replace or (with Erase selected) remove it. Platforms need entrances/gates and (for multi-level hubs) an elevator to stay accessible. The canvas above is a top-down reference only.</p>
     `;
 
     this.dom.tabContent.querySelectorAll('[data-type]').forEach(btn => {
@@ -158,7 +210,16 @@ export class StationDesigner {
     this.dom.tabContent.querySelectorAll('[data-level]').forEach(btn => {
       btn.addEventListener('click', () => {
         this.activeLevel = Number(btn.dataset.level);
+        if (this.walk.active) this.walk.exit();
         this._renderTab();
+        this._syncSceneView();
+      });
+    });
+    this.dom.tabContent.querySelectorAll('[data-view-mode]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.viewMode = btn.dataset.viewMode;
+        this._renderTab();
+        this._syncSceneView();
       });
     });
     document.getElementById('station-add-level')?.addEventListener('click', () => {
@@ -186,46 +247,12 @@ export class StationDesigner {
       });
     });
 
-    this._wireGridCanvas();
     this._drawGrid();
   }
 
-  _wireGridCanvas() {
-    const canvas = document.getElementById('station-grid-canvas');
-    let painting = false;
-    const grid = () => this.design.levels[this.activeLevel].grid;
-    const toCell = (e) => {
-      const rect = canvas.getBoundingClientRect();
-      const rows = grid().length, cols = grid()[0].length;
-      const cellPx = Math.min(rect.width / cols, rect.height / rows);
-      const offX = (rect.width - cols * cellPx) / 2;
-      const offY = (rect.height - rows * cellPx) / 2;
-      const c = Math.floor((e.clientX - rect.left - offX) / cellPx);
-      const r = Math.floor((e.clientY - rect.top - offY) / cellPx);
-      if (r < 0 || c < 0 || r >= rows || c >= cols) return null;
-      return { r, c };
-    };
-    const paint = (r, c) => {
-      const g = grid();
-      if (g[r][c] === this.brush) return;
-      g[r][c] = this.brush;
-      this._drawGrid();
-      this.scene.setDesign(this.design);
-      this._renderStats();
-    };
-    canvas.addEventListener('pointerdown', (e) => {
-      painting = true;
-      const cell = toCell(e);
-      if (cell) paint(cell.r, cell.c);
-    });
-    canvas.addEventListener('pointermove', (e) => {
-      if (!painting) return;
-      const cell = toCell(e);
-      if (cell) paint(cell.r, cell.c);
-    });
-    window.addEventListener('pointerup', () => { painting = false; });
-  }
-
+  // Read-only top-down reference for the current level - actual placement
+  // happens via freeform 3D clicks (see _handleLayoutClick), not by
+  // painting on this canvas.
   _drawGrid() {
     const canvas = document.getElementById('station-grid-canvas');
     if (!canvas) return;
@@ -292,7 +319,11 @@ export class StationDesigner {
     const nameInput = window.prompt('Name this station design:', this.design.name);
     if (nameInput === null) return;
     this.design.name = nameInput || this.design.name;
+    // Thumbnail always captures the exterior look, regardless of which view
+    // is active while editing - that's what reads best as a gallery card.
+    if (this.viewMode !== 'exterior') this.scene.setDesign(this.design);
     this.design.thumbnail = this.scene.snapshot();
+    if (this.viewMode !== 'exterior') this._syncSceneView();
     const saved = this.catalog.save(this.design);
     this.ui.showToast(`Saved "${saved.name}" to your station gallery.`);
     if (this.onSave) {

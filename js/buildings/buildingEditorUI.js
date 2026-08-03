@@ -1,15 +1,18 @@
-import { FOOTPRINT_PRESETS, WALL_MATERIALS, ROOF_MATERIALS, BUILD_PIECES, MAX_LEVELS, VOXEL_MATERIALS, footprintPreset } from './buildingDefs.js';
+import { FOOTPRINT_PRESETS, WALL_MATERIALS, ROOF_MATERIALS, BUILD_PIECES, MAX_LEVELS, VOXEL_MATERIALS, BUILD_CELL_SIZE, footprintPreset } from './buildingDefs.js';
 import { createDefaultBuildingDesign, createEmptyLevelGrid, addVoxel, removeVoxelAt } from './buildingModel.js';
-import { worldPointToVoxelCoord } from './buildingMeshBuilder.js';
+import { worldPointToVoxelCoord, structureGridOrigin } from './buildingMeshBuilder.js';
 import { BuildingScene } from './buildingScene.js';
+import { FreeformClickPicker, worldPointToGridCell } from '../shared/freeformPlacement.js';
 
 function el(html) { const d = document.createElement('div'); d.innerHTML = html.trim(); return d.firstElementChild; }
 
-// Freeform Building Creator: a "Structure" tab for painting prefab pieces
-// (walls/windows/doors/floors/roofs) per floor on a grid - the same
-// paint-a-grid interaction already proven in the station builder's layout
-// editor - plus a "Details" tab with Minecraft-style voxel blocks clicked
-// directly onto the 3D preview, layered on top for freeform decoration.
+// Freeform Building Creator: a "Structure" tab for placing prefab pieces
+// (walls/windows/doors/floors/roofs) per floor by clicking directly in the
+// 3D preview, Bloxburg-style - plus a "Details" tab with Minecraft-style
+// voxel blocks clicked onto the same preview, layered on top for freeform
+// decoration. Both tabs share one click-vs-drag picker (FreeformClickPicker)
+// so a click always resolves to *some* grid cell/voxel instead of nudging
+// the OrbitControls camera.
 export class BuildingEditor {
   constructor({ catalog, ui } = {}) {
     this.catalog = catalog;
@@ -43,33 +46,25 @@ export class BuildingEditor {
         this.activeTab = btn.dataset.tab;
         for (const b of this.dom.tabButtons) b.classList.toggle('active', b === btn);
         this._renderTab();
+        this._syncBuildPlane();
       });
     }
-    this._wireViewportInteraction();
-  }
-
-  // Distinguishes a click (place/remove a voxel) from an OrbitControls drag
-  // (rotate/pan/zoom) the same way the main game's 3D click handler does:
-  // both listen on the same canvas without interfering, and a small enough
-  // pointer movement between down/up counts as a click.
-  _wireViewportInteraction() {
-    const canvas = this.dom.canvas;
-    let down = null;
-    canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; });
-    canvas.addEventListener('pointerup', (e) => {
-      if (!down) return;
-      const dist = Math.hypot(e.clientX - down.x, e.clientY - down.y);
-      down = null;
-      if (dist > 6) return;
-      if (this.activeTab === 'details') this._handleVoxelClick(e);
+    // One shared click-vs-drag picker for the whole 3D viewport - which tab
+    // is active decides whether a click resolves against the voxel layer
+    // (Details) or the structure grid (Structure).
+    this.picker = new FreeformClickPicker({
+      canvas: this.dom.canvas,
+      raycaster: (ndcX, ndcY) => this.activeTab === 'details'
+        ? this.scene.raycastFromPointer(ndcX, ndcY)
+        : this.scene.raycastStructure(ndcX, ndcY, this.activeLevel),
     });
+    this.picker.onClick = (hit) => {
+      if (this.activeTab === 'details') this._handleVoxelClick(hit);
+      else this._handleStructureClick(hit);
+    };
   }
 
-  _handleVoxelClick(e) {
-    const rect = this.dom.canvas.getBoundingClientRect();
-    const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    const hit = this.scene.raycastFromPointer(ndcX, ndcY);
+  _handleVoxelClick(hit) {
     if (!hit || !hit.face) return;
 
     if (this.voxelMode === 'erase') {
@@ -85,6 +80,28 @@ export class BuildingEditor {
     }
     this.scene.setDesign(this.design);
     if (this.activeTab === 'details') this._renderTab();
+    this._renderStats();
+  }
+
+  // Structure tab's freeform placement: click an existing piece (resolved
+  // directly via its userData tag) or click the active floor's pick plane
+  // (resolved via worldPointToGridCell) to paint the current brush there -
+  // the same "select a piece, click in the 3D world" flow as the voxel
+  // layer, just snapped to the coarser structure grid instead of voxels.
+  _handleStructureClick(hit) {
+    if (!hit) return;
+    const ud = hit.object.userData;
+    let r, c;
+    if (ud.isStructureCell) { ({ row: r, col: c } = ud); }
+    else if (ud.isBuildPlane) { ({ r, c } = worldPointToGridCell(hit.point, structureGridOrigin(this.design), BUILD_CELL_SIZE)); }
+    else return;
+    if (r < 0 || c < 0 || r >= this.design.rows || c >= this.design.cols) return;
+    const level = this.design.levels[this.activeLevel];
+    if (level.grid[r][c] === this.brush) return;
+    level.grid[r][c] = this.brush;
+    this._drawGrid();
+    this.scene.setDesign(this.design);
+    this.scene.setActiveLevelPlane(this.design, this.activeLevel);
     this._renderStats();
   }
 
@@ -121,6 +138,16 @@ export class BuildingEditor {
     this.scene.setDesign(this.design);
     this._renderTab();
     this._renderStats();
+    this._syncBuildPlane();
+  }
+
+  // Keeps the faint "you're building here" pick-plane in sync with which
+  // tab/floor is active - shown only on the Structure tab (it doubles as
+  // the raycast target for still-empty cells there), hidden everywhere else
+  // so it doesn't visually clutter voxel decoration.
+  _syncBuildPlane() {
+    if (this.activeTab === 'structure') this.scene.setActiveLevelPlane(this.design, this.activeLevel);
+    else this.scene.clearActiveLevelPlane();
   }
 
   _renderTab() {
@@ -200,7 +227,7 @@ export class BuildingEditor {
       <h4>Place</h4>
       <div class="piece-brush-row">${pieceButtons}</div>
       <canvas id="building-grid-canvas"></canvas>
-      <p class="designer-hint">Click, or click-drag, to paint the current floor. Switch floors above to build upward.</p>
+      <p class="designer-hint">Click a spot on the 3D preview (right) to place the selected piece there, Bloxburg-style - click an existing piece to replace or (with Erase selected) remove it. Switch floors above to build upward. The canvas above is a top-down reference only.</p>
     `;
 
     this.dom.tabContent.querySelectorAll('[data-footprint]').forEach(btn => {
@@ -213,6 +240,7 @@ export class BuildingEditor {
       btn.addEventListener('click', () => {
         this.activeLevel = Number(btn.dataset.level);
         this._renderTab();
+        this._syncBuildPlane();
       });
     });
     document.getElementById('building-add-level')?.addEventListener('click', () => {
@@ -239,45 +267,12 @@ export class BuildingEditor {
       });
     });
 
-    this._wireGridCanvas();
     this._drawGrid();
   }
 
-  _wireGridCanvas() {
-    const canvas = document.getElementById('building-grid-canvas');
-    let painting = false;
-    const toCell = (e) => {
-      const rect = canvas.getBoundingClientRect();
-      const cols = this.design.cols, rows = this.design.rows;
-      const cellPx = Math.min(rect.width / cols, rect.height / rows);
-      const offX = (rect.width - cols * cellPx) / 2;
-      const offY = (rect.height - rows * cellPx) / 2;
-      const c = Math.floor((e.clientX - rect.left - offX) / cellPx);
-      const r = Math.floor((e.clientY - rect.top - offY) / cellPx);
-      if (r < 0 || c < 0 || r >= rows || c >= cols) return null;
-      return { r, c };
-    };
-    const paint = (r, c) => {
-      const level = this.design.levels[this.activeLevel];
-      if (level.grid[r][c] === this.brush) return;
-      level.grid[r][c] = this.brush;
-      this._drawGrid();
-      this.scene.setDesign(this.design);
-      this._renderStats();
-    };
-    canvas.addEventListener('pointerdown', (e) => {
-      painting = true;
-      const cell = toCell(e);
-      if (cell) paint(cell.r, cell.c);
-    });
-    canvas.addEventListener('pointermove', (e) => {
-      if (!painting) return;
-      const cell = toCell(e);
-      if (cell) paint(cell.r, cell.c);
-    });
-    window.addEventListener('pointerup', () => { painting = false; });
-  }
-
+  // Read-only top-down reference for the current floor - actual placement
+  // happens via freeform 3D clicks (see _handleStructureClick), not by
+  // painting on this canvas.
   _drawGrid() {
     const canvas = document.getElementById('building-grid-canvas');
     if (!canvas) return;

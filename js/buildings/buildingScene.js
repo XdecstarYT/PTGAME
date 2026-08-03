@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { buildStructureMesh, buildVoxelMesh } from './buildingMeshBuilder.js';
+import { buildStructureMesh, buildVoxelMesh, buildFloorPickPlane } from './buildingMeshBuilder.js';
 
 // A small, self-contained Three.js scene for the Building Creator preview -
 // deliberately much simpler than DesignerScene (no wear/rain/environment
@@ -41,6 +41,7 @@ export class BuildingScene {
     this.scene.add(this.ground);
 
     this.buildingGroup = null;
+    this.buildPlane = null;
     this.raycaster = new THREE.Raycaster();
 
     this._resizeToContainer();
@@ -74,6 +75,48 @@ export class BuildingScene {
     const targets = this.buildingGroup ? [...this.buildingGroup.children, this.ground] : [this.ground];
     const hits = this.raycaster.intersectObjects(targets, true);
     return hits[0] || null;
+  }
+
+  // Shows/rebuilds the faint pick-plane for whichever floor is currently
+  // being edited on the Structure tab - both a visual "you're building here"
+  // affordance and the raycast target that makes still-empty cells clickable
+  // (there's no real mesh there otherwise).
+  setActiveLevelPlane(design, levelIndex) {
+    if (this.buildPlane) {
+      this.scene.remove(this.buildPlane);
+      this.buildPlane.geometry.dispose();
+      this.buildPlane.material.dispose();
+    }
+    this.buildPlane = buildFloorPickPlane(design, levelIndex);
+    this.scene.add(this.buildPlane);
+  }
+
+  clearActiveLevelPlane() {
+    if (!this.buildPlane) return;
+    this.scene.remove(this.buildPlane);
+    this.buildPlane.geometry.dispose();
+    this.buildPlane.material.dispose();
+    this.buildPlane = null;
+  }
+
+  // Raycasts for the Structure tab's freeform placement: same targets as
+  // raycastFromPointer() plus the active floor's pick plane, but hits
+  // belonging to a *different* floor's structure pieces are skipped so
+  // clicking through/around one floor never edits another - the closest
+  // relevant hit wins instead of always the closest hit overall.
+  raycastStructure(ndcX, ndcY, levelIndex) {
+    this.raycaster.setFromCamera({ x: ndcX, y: ndcY }, this.camera);
+    const targets = [];
+    if (this.buildingGroup) targets.push(...this.buildingGroup.children);
+    if (this.buildPlane) targets.push(this.buildPlane);
+    targets.push(this.ground);
+    const hits = this.raycaster.intersectObjects(targets, true);
+    for (const hit of hits) {
+      const ud = hit.object.userData;
+      if (ud.isStructureCell && ud.levelIndex !== levelIndex) continue;
+      return hit;
+    }
+    return null;
   }
 
   render() {

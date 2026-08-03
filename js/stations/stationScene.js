@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { buildStationShellMesh } from './stationMeshBuilder.js';
+import { buildStationShellMesh, buildStationInteriorGroup } from './stationMeshBuilder.js';
 
 // A small, self-contained Three.js preview for the Station Designer -
 // mirrors BuildingScene: no wear/rain/environment presets, just a clear view
@@ -37,9 +37,12 @@ export class StationScene {
     this.ground = new THREE.Mesh(groundGeo, groundMat);
     this.ground.rotation.x = -Math.PI / 2;
     this.ground.receiveShadow = true;
+    this.ground.userData.isGround = true;
     this.scene.add(this.ground);
 
     this.stationGroup = null;
+    this.interiorGroup = null;
+    this.raycaster = new THREE.Raycaster();
 
     this._resizeToContainer();
     window.addEventListener('resize', () => this._resizeToContainer());
@@ -54,6 +57,7 @@ export class StationScene {
   }
 
   setDesign(design) {
+    this.clearInteriorLevel();
     if (this.stationGroup) {
       this.scene.remove(this.stationGroup);
       this.stationGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
@@ -62,7 +66,44 @@ export class StationScene {
       typeId: design.typeId, tierId: design.tierId, architectureStyleId: design.architectureStyleId,
       w: design.w, d: design.d, levelCount: design.levels.length,
     });
+    this.stationGroup.visible = true;
     this.scene.add(this.stationGroup);
+  }
+
+  // Swaps the preview from the small stylized exterior shell to the real,
+  // full-size interior room for one level (the same room walk mode shows) -
+  // used by the Station Designer's Layout tab so freeform placement clicks
+  // have real geometry (and an always-present floor plane) to raycast
+  // against, and so what you click while editing is what you'd see walking
+  // through it.
+  setInteriorLevel(design, levelIndex) {
+    this.clearInteriorLevel();
+    this.interiorGroup = buildStationInteriorGroup(design, levelIndex, { includeCeiling: false });
+    this.scene.add(this.interiorGroup);
+    if (this.stationGroup) this.stationGroup.visible = false;
+  }
+
+  clearInteriorLevel() {
+    if (!this.interiorGroup) return;
+    this.scene.remove(this.interiorGroup);
+    this.interiorGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+    this.interiorGroup = null;
+    if (this.stationGroup) this.stationGroup.visible = true;
+  }
+
+  // Raycasts the Layout tab's freeform placement against the current
+  // interior group only - returns the first hit tagged as an editable cell
+  // (real furniture/decal mesh) or the always-present floor plane (for
+  // still-empty cells), ignoring walls/ceiling/canopy/etc.
+  raycastInterior(ndcX, ndcY) {
+    if (!this.interiorGroup) return null;
+    this.raycaster.setFromCamera({ x: ndcX, y: ndcY }, this.camera);
+    const hits = this.raycaster.intersectObjects([this.interiorGroup], true);
+    for (const hit of hits) {
+      const ud = hit.object.userData;
+      if (ud.isInteriorCell || ud.isInteriorFloor) return hit;
+    }
+    return null;
   }
 
   render() {
