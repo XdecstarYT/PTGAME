@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { STATION_COST, VEHICLE_TYPES, CARGO_DEPOT_COST, CARGO_TYPES } from './config.js';
+import { VEHICLE_TYPES, CARGO_DEPOT_COST, CARGO_TYPES } from './config.js';
 import { REGULATION_PRESETS } from './designer/regulations.js';
 import { freightChassisById } from './designer/freightChassisDefs.js';
 import { computeFreightStats } from './designer/freightModel.js';
+import { stationDesignType, stationDesignCost, stationTierUpgradePlan, stationTier } from './stations/stationDefs.js';
 
 function fmtMoney(n) {
   const sign = n < 0 ? '-' : '';
@@ -34,6 +35,9 @@ export class UIController {
     this.buildingCatalog = null; // set later via setBuildingCatalog
     this.buildingEditor = null; // set later via setBuildingEditor
     this.pendingBuildingDesignId = null;
+    this.stationCatalog = null; // set later via setStationCatalog
+    this.stationDesigner = null; // set later via setStationDesigner
+    this.pendingStationDesignId = null;
 
     this.tool = 'select';
     this.draftRoute = null;
@@ -59,6 +63,8 @@ export class UIController {
   setCargoSystem(cs) { this.cargoSystem = cs; }
   setBuildingCatalog(bc) { this.buildingCatalog = bc; }
   setBuildingEditor(be) { this.buildingEditor = be; }
+  setStationCatalog(sc) { this.stationCatalog = sc; }
+  setStationDesigner(sd) { this.stationDesigner = sd; }
 
   _cacheDom() {
     this.dom = {
@@ -148,8 +154,10 @@ export class UIController {
         const tool = btn.dataset.tool;
         if (tool === 'vehicle') { this.openRoutesModal(); return; }
         if (tool === 'building') { this._openBuildingPicker(); return; }
+        if (tool === 'station') { this._openStationPicker(); return; }
         this._cancelDraftRoute();
         this.pendingBuildingDesignId = null;
+        this.pendingStationDesignId = null;
         this.tool = tool;
         for (const b of this.dom.toolBtns) b.classList.toggle('active', b.dataset.tool === tool);
         this.closePanel();
@@ -161,7 +169,7 @@ export class UIController {
   updateToolHint() {
     const hints = {
       select: '',
-      station: `Click a developed zone tile near a road to build a station (${fmtMoney(STATION_COST)}).`,
+      station: 'Click a developed zone tile near a road to place your station design there.',
       route: 'Click stations in order to add stops. Open the panel to choose a vehicle & finish.',
       depot: `Click a developed zone tile near a road to build a cargo depot (${fmtMoney(CARGO_DEPOT_COST)}).`,
       building: 'Click a developed zone tile to place your building design there.',
@@ -315,7 +323,7 @@ export class UIController {
       else if (clickedDepot) this.selectDepot(clickedDepot.id);
       else this.closePanel();
     } else if (this.tool === 'station') {
-      this._placeStation(tx, tz);
+      this._placeStationOnTile(tx, tz);
     } else if (this.tool === 'depot') {
       this._placeDepot(tx, tz);
     } else if (this.tool === 'building') {
@@ -331,15 +339,63 @@ export class UIController {
 
   // ---------------- station placement ----------------
 
-  _placeStation(tx, tz) {
+  _openStationPicker() {
+    if (!this.stationCatalog) return;
+    const designs = this.stationCatalog.list();
+    const cards = designs.map(d => {
+      const type = stationDesignType(d.typeId);
+      const cost = stationDesignCost(d);
+      return `
+      <div class="showroom-card">
+        <img src="${d.thumbnail || ''}" class="showroom-thumb ${d.thumbnail ? '' : 'hidden'}">
+        <div class="showroom-name">${d.name}</div>
+        <div class="showroom-meta">${type.icon} ${type.name} · ${fmtMoney(cost)}</div>
+        <button class="action secondary" data-pick="${d.id}">Place</button>
+      </div>
+    `;
+    }).join('') || '<p>No station designs yet - use the Station Designer to make one.</p>';
+
+    this.openModal('Place a Station', `
+      <div class="showroom-grid">${cards}</div>
+      <button class="action" id="picker-station-new" style="margin-top:10px">＋ Design a New Station</button>
+    `);
+    this.dom.modalContent.querySelectorAll('[data-pick]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.pendingStationDesignId = btn.dataset.pick;
+        this.closeModal();
+        this._enterStationPlacementMode();
+      });
+    });
+    document.getElementById('picker-station-new').addEventListener('click', () => {
+      this.closeModal();
+      this.stationDesigner?.open((savedDesign) => {
+        this.pendingStationDesignId = savedDesign.id;
+        this._enterStationPlacementMode();
+      });
+    });
+  }
+
+  _enterStationPlacementMode() {
+    this.tool = 'station';
+    for (const b of this.dom.toolBtns) b.classList.toggle('active', b.dataset.tool === 'station');
+    this.closePanel();
+    this.updateToolHint();
+    this.showToast('Click a developed tile near a road to place your station.');
+  }
+
+  _placeStationOnTile(tx, tz) {
+    if (!this.stationCatalog || !this.pendingStationDesignId) { this.showToast('Choose a station design first.'); return; }
+    const design = this.stationCatalog.get(this.pendingStationDesignId);
+    if (!design) { this.showToast('That station design no longer exists.'); return; }
     const check = this.network.canPlaceStation(tx, tz);
     if (!check.ok) { this.showToast(check.reason); return; }
-    if (!this.economy.canAfford(STATION_COST)) { this.showToast('Not enough budget to build a station.'); return; }
-    this.economy.spend(STATION_COST);
-    const station = this.network.addStation(tx, tz);
+    const cost = stationDesignCost(design);
+    if (!this.economy.canAfford(cost)) { this.showToast('Not enough budget to build this station.'); return; }
+    this.economy.spend(cost);
+    const station = this.network.addStation(tx, tz, null, design);
     this.network.refreshMeshes();
     this.refreshSchematic();
-    this.showToast(`Built ${station.name} (${fmtMoney(STATION_COST)})`);
+    this.showToast(`Built ${station.name} (${fmtMoney(cost)})`);
     this.selectStation(station.id);
   }
 
@@ -708,9 +764,28 @@ export class UIController {
       <div class="stationlist-item"><span class="swatch" style="background:#${r.color.toString(16).padStart(6, '0')}"></span>${r.name} (${this.catalog.get(r.modelId)?.name || VEHICLE_TYPES[r.type].label})</div>
     `).join('') || '<div class="row"><span>No routes yet</span></div>';
 
+    let designBlock = '';
+    if (station.design) {
+      const type = stationDesignType(station.design.typeId);
+      const tier = stationTier(station.design.tierId);
+      const stats = station.designStats;
+      const plan = stationTierUpgradePlan(station.design);
+      designBlock = `
+        <h4>Station Design</h4>
+        <div class="row"><span>Type / Tier</span><b>${type.icon} ${type.name} · ${tier.name}</b></div>
+        <div class="row"><span>Capacity</span><b>${stats.capacity.toLocaleString()}/hr</b></div>
+        <div class="row"><span>Congestion risk</span><b style="color:${stats.congestionRisk > 40 ? '#ff6b6b' : '#6ee7c9'}">${stats.congestionRisk}%</b></div>
+        <div class="row"><span>Accessibility</span><b style="color:${stats.accessibilityCompliant ? '#6ee7c9' : '#ffd166'}">${stats.accessibilityRating}/100</b></div>
+        ${plan
+          ? `<button class="action secondary" id="station-upgrade-tier">Upgrade to ${plan.next.name} (${fmtMoney(plan.cost)})</button>`
+          : '<div class="row"><span>Tier</span><b>Max tier reached</b></div>'}
+      `;
+    }
+
     return `
       <div class="row"><span>Waiting passengers</span><b>${station.waitingPassengers.length}</b></div>
       <div class="row"><span>Catchment radius</span><b>${station.radius.toFixed(0)}m</b></div>
+      ${designBlock}
       <h4>Routes serving this stop</h4>
       ${routeRows}
       <div class="field"><label>Rename</label><input type="text" id="station-name" value="${station.name}"></div>
@@ -727,6 +802,17 @@ export class UIController {
       this.network.refreshMeshes();
       this.refreshSchematic();
       this.dom.panelTitle.textContent = station.name;
+    });
+    panel.querySelector('#station-upgrade-tier')?.addEventListener('click', () => {
+      const plan = stationTierUpgradePlan(station.design);
+      if (!plan) return;
+      if (!this.economy.canAfford(plan.cost)) { this.showToast('Not enough budget to upgrade this station.'); return; }
+      this.economy.spend(plan.cost);
+      this.network.upgradeStationTier(station.id);
+      this.network.refreshMeshes();
+      this.refreshSchematic();
+      this.showToast(`Upgraded ${station.name} to ${plan.next.name} (${fmtMoney(plan.cost)}).`);
+      this.selectStation(station.id);
     });
     panel.querySelector('#station-delete')?.addEventListener('click', () => this.deleteStation(station.id));
   }

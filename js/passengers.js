@@ -168,7 +168,7 @@ export class PassengerSystem {
     const passenger = {
       id, originTile, destTile, spawnHour: hour,
       transfers: 0, totalWaitMinutes: 0, crowdingMisses: 0,
-      routesUsed: [], comfortAccum: 0, reliabilityAccum: 0, ridesBoarded: 0,
+      routesUsed: [], comfortAccum: 0, reliabilityAccum: 0, stationQualityAccum: 0, ridesBoarded: 0,
     };
 
     if (!plan) {
@@ -272,6 +272,15 @@ export class PassengerSystem {
         this.economy.recordBoarding(route.id);
         passenger.comfortAccum += this.vehicleSystem.currentComfort(vehicle);
         passenger.reliabilityAccum += this.vehicleSystem.currentReliability(vehicle);
+        // A designed station's dwell time (bigger/more congested hubs take
+        // longer to navigate) adds real wait; its accessibility-vs-congestion
+        // balance feeds satisfaction the same way vehicle comfort does. A
+        // station with no design (legacy/undesigned) stays perfectly neutral -
+        // 70 exactly cancels out in _completeTrip's (avg - 70) term, so bare
+        // stations behave exactly as they did before this existed.
+        const dstats = station.designStats;
+        passenger.totalWaitMinutes += dstats ? dstats.dwellTimeMin : 0;
+        passenger.stationQualityAccum += dstats ? Math.max(0, Math.min(100, dstats.accessibilityRating - dstats.congestionRisk)) : 70;
         passenger.ridesBoarded += 1;
       }
     }
@@ -296,8 +305,10 @@ export class PassengerSystem {
     if (passenger.ridesBoarded > 0) {
       const avgComfort = passenger.comfortAccum / passenger.ridesBoarded;
       const avgReliability = passenger.reliabilityAccum / passenger.ridesBoarded;
+      const avgStationQuality = passenger.stationQualityAccum / passenger.ridesBoarded;
       score += (avgComfort - 70) * 0.3;
       score += (avgReliability - 90) * 0.2;
+      score += (avgStationQuality - 70) * 0.15;
     }
     score = Math.max(0, Math.min(100, score));
     this.satisfactionSamples.push(score);

@@ -20,6 +20,8 @@ import { CargoSystem, bumpCargoIdCounter } from './cargo.js';
 import { ShippingContractSystem } from './shippingContracts.js';
 import { BuildingEditor } from './buildings/buildingEditorUI.js';
 import { BuildingCatalog } from './buildings/buildingCatalog.js';
+import { StationDesigner } from './stations/stationEditorUI.js';
+import { StationCatalog } from './stations/stationCatalog.js';
 import { allScenarios, exportScenario, importScenarioFromFile, deleteCustomScenario } from './scenarios.js';
 
 const canvas = document.getElementById('viewport');
@@ -66,6 +68,12 @@ const buildingEditor = new BuildingEditor({ catalog: buildingCatalog, ui });
 ui.setBuildingCatalog(buildingCatalog);
 ui.setBuildingEditor(buildingEditor);
 document.getElementById('btn-build-creator').addEventListener('click', () => buildingEditor.open());
+
+const stationCatalog = new StationCatalog();
+const stationDesigner = new StationDesigner({ catalog: stationCatalog, ui });
+ui.setStationCatalog(stationCatalog);
+ui.setStationDesigner(stationDesigner);
+document.getElementById('btn-station-designer').addEventListener('click', () => stationDesigner.open());
 
 const staffing = new Staffing(economy);
 ui.setStaffing(staffing);
@@ -298,6 +306,7 @@ function animate(now) {
   if (schematicView.visible) schematicView.render();
   if (vehicleDesigner.isOpen) vehicleDesigner.render(dt / 1000);
   if (buildingEditor.isOpen) buildingEditor.render(dt / 1000);
+  if (stationDesigner.isOpen) stationDesigner.render();
   newsTicker.update(dt);
 
   hudAccum += dt;

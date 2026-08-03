@@ -85,7 +85,10 @@ export class SaveLoadSystem {
       },
       time: { day: this.timeSystem.day, minutesOfDay: this.timeSystem.minutesOfDay, speed: this.timeSystem.speed },
       economy: this.economy.serialize(),
-      stations: [...this.network.stations.values()].map(s => ({ id: s.id, name: s.name, x: s.x, z: s.z, roadTile: s.roadTile })),
+      stations: [...this.network.stations.values()].map(s => ({
+        id: s.id, name: s.name, x: s.x, z: s.z, roadTile: s.roadTile,
+        designId: s.designId, design: s.design,
+      })),
       routes: [...this.network.routes.values()].map(r => ({
         id: r.id, name: r.name, type: r.type, color: r.color, stationIds: r.stationIds, loop: r.loop,
         frequency: r.frequency, modelId: r.modelId, committed: r.committed, strikeActive: !!r.strikeActive,

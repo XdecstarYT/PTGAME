@@ -5,6 +5,10 @@ import {
 } from './config.js';
 import { computeStats } from './designer/vehicleModel.js';
 import { chassisById } from './designer/chassisDefs.js';
+import { computeStationStats } from './stations/stationStatEngine.js';
+import { STATION_TIER_CATCHMENT_MULT, stationTierUpgradePlan } from './stations/stationDefs.js';
+import { resizeStationLevelGrids } from './stations/stationModel.js';
+import { buildStationShellMesh } from './stations/stationMeshBuilder.js';
 
 let _idCounter = 1;
 function nextId(prefix) { return `${prefix}${_idCounter++}`; }
@@ -123,22 +127,51 @@ export class Network {
     return { ok: true, road };
   }
 
-  addStation(x, z, name) {
+  // design: an optional StationCatalog design object (see js/stations/). A
+  // private deep copy is embedded on the station (like route.vehicleStats is
+  // a snapshot, not a live catalog reference) so a later tier upgrade
+  // (upgradeStationTier below) can grow THIS station's own levels/grids
+  // without mutating the shared template every other station placed from the
+  // same design still points at. designId is kept only as an informational
+  // "based on" back-reference - it can go stale after an upgrade and that's fine.
+  addStation(x, z, name, design = null) {
     const check = this.canPlaceStation(x, z);
     if (!check.ok) return null;
     const id = nextId('st');
     const pos = this.city.tileCenterWorld(x, z);
+    const ownDesign = design ? JSON.parse(JSON.stringify(design)) : null;
     const station = {
       id, name: name || `Station ${this.stations.size + 1}`,
       x, z, worldX: pos.x, worldZ: pos.z,
       roadTile: check.road,
-      radius: STATION_CATCHMENT_RADIUS,
+      radius: STATION_CATCHMENT_RADIUS * (ownDesign ? (STATION_TIER_CATCHMENT_MULT[ownDesign.tierId] || 1) : 1),
       routeIds: new Set(),
       waitingPassengers: [],
       stats: { boarded: 0, alighted: 0 },
+      designId: design?.id ?? null,
+      design: ownDesign,
+      designStats: ownDesign ? computeStationStats(ownDesign) : null,
     };
     this.stations.set(id, station);
     return station;
+  }
+
+  // Grows a designed station to the next size tier, charging only for the
+  // new footprint area (see stationTierUpgradePlan) - caller (ui.js) already
+  // verified affordability and deducted the budget. Resizes the station's own
+  // embedded design/grids and recomputes its stats/catchment/mesh.
+  upgradeStationTier(id) {
+    const station = this.stations.get(id);
+    if (!station || !station.design) return null;
+    const plan = stationTierUpgradePlan(station.design);
+    if (!plan) return null;
+    station.design.tierId = plan.next.id;
+    station.design.w = plan.next.w;
+    station.design.d = plan.next.d;
+    resizeStationLevelGrids(station.design);
+    station.designStats = computeStationStats(station.design);
+    station.radius = STATION_CATCHMENT_RADIUS * (STATION_TIER_CATCHMENT_MULT[station.design.tierId] || 1);
+    return plan;
   }
 
   // ---------------- save/load ----------------
@@ -151,16 +184,22 @@ export class Network {
     this.demandSpikes.length = 0;
   }
 
-  // Rebuilds a previously-paid-for station from save data - no cost, no checks.
+  // Rebuilds a previously-paid-for station from save data - no cost, no
+  // checks. data.design (if present) is the station's own embedded design
+  // snapshot, already self-contained - no catalog lookup needed at load time.
   restoreStation(data) {
     const pos = this.city.tileCenterWorld(data.x, data.z);
+    const design = data.design || null;
     const station = {
       id: data.id, name: data.name, x: data.x, z: data.z, worldX: pos.x, worldZ: pos.z,
       roadTile: data.roadTile,
-      radius: STATION_CATCHMENT_RADIUS,
+      radius: STATION_CATCHMENT_RADIUS * (design ? (STATION_TIER_CATCHMENT_MULT[design.tierId] || 1) : 1),
       routeIds: new Set(),
       waitingPassengers: [],
       stats: { boarded: 0, alighted: 0 },
+      designId: data.designId ?? null,
+      design,
+      designStats: design ? computeStationStats(design) : null,
     };
     this.stations.set(station.id, station);
     return station;
@@ -506,23 +545,38 @@ export class Network {
     for (const station of this.stations.values()) {
       const colors = [...station.routeIds].map(rid => this.routes.get(rid)?.color).filter(Boolean);
       const baseColor = colors[0] ?? 0xffffff;
+      let labelY = 6.2;
 
-      const poleGeo = new THREE.CylinderGeometry(0.25, 0.25, 3.2, 8);
-      const poleMat = new THREE.MeshStandardMaterial({ color: 0x2c2a33 });
-      const pole = new THREE.Mesh(poleGeo, poleMat);
-      pole.position.set(station.worldX, 1.6, station.worldZ);
-      pole.castShadow = true;
-      group.add(pole);
+      if (station.design) {
+        // Designed station - a real footprint-sized shell instead of the
+        // bare pole+cap marker (see js/stations/stationMeshBuilder.js).
+        const d = station.design;
+        const shell = buildStationShellMesh({
+          typeId: d.typeId, tierId: d.tierId, architectureStyleId: d.architectureStyleId,
+          w: d.w, d: d.d, levelCount: d.levels.length,
+        });
+        shell.position.set(station.worldX, 0, station.worldZ);
+        group.add(shell);
+        const shellHeight = 3 + (d.levels.length - 1) * 2.6;
+        labelY = shellHeight + 3;
+      } else {
+        const poleGeo = new THREE.CylinderGeometry(0.25, 0.25, 3.2, 8);
+        const poleMat = new THREE.MeshStandardMaterial({ color: 0x2c2a33 });
+        const pole = new THREE.Mesh(poleGeo, poleMat);
+        pole.position.set(station.worldX, 1.6, station.worldZ);
+        pole.castShadow = true;
+        group.add(pole);
 
-      const capGeo = new THREE.CylinderGeometry(1.6, 1.6, 0.5, 16);
-      const capMat = new THREE.MeshStandardMaterial({ color: baseColor, emissive: baseColor, emissiveIntensity: 0.25 });
-      const cap = new THREE.Mesh(capGeo, capMat);
-      cap.position.set(station.worldX, 3.4, station.worldZ);
-      cap.castShadow = true;
-      group.add(cap);
+        const capGeo = new THREE.CylinderGeometry(1.6, 1.6, 0.5, 16);
+        const capMat = new THREE.MeshStandardMaterial({ color: baseColor, emissive: baseColor, emissiveIntensity: 0.25 });
+        const cap = new THREE.Mesh(capGeo, capMat);
+        cap.position.set(station.worldX, 3.4, station.worldZ);
+        cap.castShadow = true;
+        group.add(cap);
+      }
 
       const label = makeLabelSprite(station.name);
-      label.position.set(station.worldX, 6.2, station.worldZ);
+      label.position.set(station.worldX, labelY, station.worldZ);
       group.add(label);
 
       const ringGeo = new THREE.RingGeometry(station.radius - 0.3, station.radius, 40);
