@@ -293,6 +293,7 @@ export class BuildingEditor {
     const colorFor = (id) => ({
       empty: '#232633', wall: '#8a8a8a', window: '#5b8ac9', door: '#a97c50',
       pillar: '#c9a63d', floor: '#4a4d55', roof_flat: '#6f5f4a', roof_slope: '#8f7a5a',
+      garage_door: '#c8c8c0', arch: '#7a6a55', balcony: '#5a6a5a', chimney: '#6a4a3a', skylight: '#8fbccf',
     }[id] || '#232633');
 
     for (let r = 0; r < rows; r++) {

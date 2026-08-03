@@ -55,6 +55,10 @@ export function buildStructureMesh(design) {
       color: 0x9fd6e8, transparent: true, opacity: 0.5, roughness: 0.15, metalness: 0.2,
     }));
     const doorMat = cachedMat('door', () => new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.5 }));
+    const garageMat = cachedMat('garage', () => new THREE.MeshStandardMaterial({ color: 0xd8d8d0, roughness: 0.5, metalness: 0.15 }));
+    const railMat = cachedMat('rail', () => new THREE.MeshStandardMaterial({ color: 0x8a8a8a, roughness: 0.5, metalness: 0.4 }));
+    const chimneyMat = cachedMat('chimney', () => new THREE.MeshStandardMaterial({ color: 0x6a4a3a, roughness: 0.85, metalness: 0.05 }));
+    const skylightMat = cachedMat('skylight', () => new THREE.MeshStandardMaterial({ color: 0x9fd6e8, transparent: true, opacity: 0.55, roughness: 0.1, metalness: 0.1 }));
     const roofDef = roofMaterial(design.roofMaterialId);
     const roofMat = cachedMat(`roof_${roofDef.id}`, () => new THREE.MeshStandardMaterial({
       color: roofDef.color, roughness: roofDef.roughness, metalness: roofDef.metalness,
@@ -97,11 +101,53 @@ export function buildStructureMesh(design) {
           door.position.set(x, baseY + LEVEL_HEIGHT_M * 0.375, z);
           door.receiveShadow = true;
           group.add(door);
+        } else if (id === 'garage_door') {
+          const frame = tag(new THREE.Mesh(new THREE.BoxGeometry(cellSize, LEVEL_HEIGHT_M, cellSize * 0.92), mat));
+          frame.position.set(x, baseY + LEVEL_HEIGHT_M / 2, z);
+          frame.castShadow = true; frame.receiveShadow = true;
+          group.add(frame);
+          const panel = tag(new THREE.Mesh(new THREE.BoxGeometry(cellSize * 0.9, LEVEL_HEIGHT_M * 0.62, 0.08), garageMat));
+          panel.position.set(x, baseY + LEVEL_HEIGHT_M * 0.34, z);
+          panel.receiveShadow = true;
+          group.add(panel);
+        } else if (id === 'arch') {
+          // An open archway - a lintel + two side posts, deliberately leaving
+          // the middle empty (unlike every other structure piece) so it
+          // reads as a walk-through opening rather than a solid wall.
+          const leftPost = tag(new THREE.Mesh(new THREE.BoxGeometry(cellSize * 0.2, LEVEL_HEIGHT_M, cellSize * 0.92), mat));
+          leftPost.position.set(x - cellSize * 0.4, baseY + LEVEL_HEIGHT_M / 2, z);
+          leftPost.castShadow = true; leftPost.receiveShadow = true;
+          group.add(leftPost);
+          const rightPost = tag(new THREE.Mesh(new THREE.BoxGeometry(cellSize * 0.2, LEVEL_HEIGHT_M, cellSize * 0.92), mat));
+          rightPost.position.set(x + cellSize * 0.4, baseY + LEVEL_HEIGHT_M / 2, z);
+          rightPost.castShadow = true; rightPost.receiveShadow = true;
+          group.add(rightPost);
+          const lintel = tag(new THREE.Mesh(new THREE.BoxGeometry(cellSize, LEVEL_HEIGHT_M * 0.22, cellSize * 0.92), mat));
+          lintel.position.set(x, baseY + LEVEL_HEIGHT_M * 0.89, z);
+          lintel.castShadow = true; lintel.receiveShadow = true;
+          group.add(lintel);
         } else if (id === 'floor') {
           const slab = tag(new THREE.Mesh(new THREE.BoxGeometry(cellSize, 0.2, cellSize), mat));
           slab.position.set(x, baseY + 0.1, z);
           slab.receiveShadow = true;
           group.add(slab);
+        } else if (id === 'balcony') {
+          const slab = tag(new THREE.Mesh(new THREE.BoxGeometry(cellSize, 0.2, cellSize), mat));
+          slab.position.set(x, baseY + 0.1, z);
+          slab.receiveShadow = true;
+          group.add(slab);
+          const railHeight = 0.9, railThickness = 0.06;
+          const railSpecs = [
+            [cellSize, railHeight, railThickness, 0, -cellSize / 2 + railThickness / 2],
+            [cellSize, railHeight, railThickness, 0, cellSize / 2 - railThickness / 2],
+            [railThickness, railHeight, cellSize, -cellSize / 2 + railThickness / 2, 0],
+            [railThickness, railHeight, cellSize, cellSize / 2 - railThickness / 2, 0],
+          ];
+          for (const [rw, rh, rd, dx, dz] of railSpecs) {
+            const rail = tag(new THREE.Mesh(new THREE.BoxGeometry(rw, rh, rd), railMat));
+            rail.position.set(x + dx, baseY + 0.2 + rh / 2, z + dz);
+            group.add(rail);
+          }
         } else if (id === 'roof_flat') {
           const slab = tag(new THREE.Mesh(new THREE.BoxGeometry(cellSize, 0.25, cellSize), roofMat));
           slab.position.set(x, baseY + 0.125, z);
@@ -120,6 +166,23 @@ export function buildStructureMesh(design) {
           slope.position.set(x, baseY, z - cellSize / 2);
           slope.castShadow = true; slope.receiveShadow = true;
           group.add(slope);
+        } else if (id === 'chimney') {
+          const cap = tag(new THREE.Mesh(new THREE.BoxGeometry(cellSize * 0.25, 0.25, cellSize * 0.25), roofMat));
+          cap.position.set(x, baseY + 0.25 + 0.6, z);
+          cap.castShadow = true;
+          group.add(cap);
+          const stack = tag(new THREE.Mesh(new THREE.BoxGeometry(cellSize * 0.35, 1.2, cellSize * 0.35), chimneyMat));
+          stack.position.set(x, baseY + 0.6, z);
+          stack.castShadow = true; stack.receiveShadow = true;
+          group.add(stack);
+        } else if (id === 'skylight') {
+          const frame = tag(new THREE.Mesh(new THREE.BoxGeometry(cellSize, 0.3, cellSize), roofMat));
+          frame.position.set(x, baseY + 0.15, z);
+          frame.castShadow = true; frame.receiveShadow = true;
+          group.add(frame);
+          const pane = tag(new THREE.Mesh(new THREE.BoxGeometry(cellSize * 0.8, 0.08, cellSize * 0.8), skylightMat));
+          pane.position.set(x, baseY + 0.34, z);
+          group.add(pane);
         }
       }
     }
@@ -168,6 +231,7 @@ export function buildVoxelMesh(design) {
       matCache.set(v.materialId, new THREE.MeshStandardMaterial({
         color: def.color, roughness: def.roughness, metalness: def.metalness,
         transparent: !!def.transparent, opacity: def.opacity ?? 1,
+        emissive: def.emissive ?? 0x000000, emissiveIntensity: def.emissiveIntensity ?? 1,
       }));
     }
     const pos = voxelWorldPosition(v.x, v.y, v.z);

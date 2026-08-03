@@ -501,6 +501,123 @@ function hazardStripeTexture() {
   return tex;
 }
 
+function vendingMachineMesh(color) {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(S * 0.4, 1.2, S * 0.32),
+    new THREE.MeshStandardMaterial({ color }),
+  );
+  body.position.set(0, 0.6, 0);
+  group.add(body);
+  const screen = new THREE.Mesh(
+    new THREE.PlaneGeometry(S * 0.3, 0.7),
+    new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.2, metalness: 0.3 }),
+  );
+  screen.position.set(0, 0.65, S * 0.161);
+  group.add(screen);
+  const rowColors = [0xd9528f, 0x4f7fd9, 0xc9a63d, 0x5fae6f];
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 2; c++) {
+      const can = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.045, 0.045, 0.18, 10),
+        new THREE.MeshStandardMaterial({ color: rowColors[r] }),
+      );
+      can.position.set((c - 0.5) * S * 0.14, 0.35 + r * 0.2, S * 0.17);
+      group.add(can);
+    }
+  }
+  return castAll(group);
+}
+
+function securityBoothMesh(color) {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(S * 0.75, 1.15, S * 0.75),
+    new THREE.MeshStandardMaterial({ color }),
+  );
+  body.position.set(0, 0.575, 0);
+  group.add(body);
+  for (const side of [-1, 1]) {
+    const window_ = new THREE.Mesh(
+      new THREE.PlaneGeometry(S * 0.32, 0.4),
+      new THREE.MeshStandardMaterial({ color: 0x1a2230, roughness: 0.25, metalness: 0.3 }),
+    );
+    window_.rotation.y = side * Math.PI / 2;
+    window_.position.set(side * S * 0.376, 0.75, 0);
+    group.add(window_);
+  }
+  const roof = new THREE.Mesh(
+    new THREE.BoxGeometry(S * 0.85, 0.08, S * 0.85),
+    new THREE.MeshStandardMaterial({ color: darker(color, 0.35) }),
+  );
+  roof.position.set(0, 1.19, 0);
+  group.add(roof);
+  const lightMat = new THREE.MeshStandardMaterial({ color: 0x4fa0ff, emissive: 0x4fa0ff, emissiveIntensity: 0.6 });
+  const light = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), lightMat);
+  light.position.set(0, 1.3, 0);
+  group.add(light);
+  return castAll(group);
+}
+
+function luggageLockersMesh(color) {
+  const group = new THREE.Group();
+  const cols = 3, rows = 2;
+  const doorMat = new THREE.MeshStandardMaterial({ color });
+  const handleMat = new THREE.MeshStandardMaterial({ color: 0xc9ccd1, metalness: 0.6, roughness: 0.3 });
+  const cellW = (S * 0.9) / cols, cellH = 0.4;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const door = new THREE.Mesh(new THREE.BoxGeometry(cellW - 0.02, cellH - 0.02, 0.3), doorMat);
+      door.position.set(-S * 0.45 + cellW / 2 + c * cellW, 0.25 + r * cellH, 0);
+      group.add(door);
+      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.1, 0.03), handleMat);
+      handle.position.set(-S * 0.45 + cellW / 2 + c * cellW + cellW * 0.3, 0.25 + r * cellH, 0.16);
+      group.add(handle);
+    }
+  }
+  return castAll(group);
+}
+
+function atmMesh(color) {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(S * 0.38, 1.3, S * 0.28),
+    new THREE.MeshStandardMaterial({ color }),
+  );
+  body.position.set(0, 0.65, 0);
+  group.add(body);
+  const screen = new THREE.Mesh(
+    new THREE.PlaneGeometry(S * 0.24, 0.22),
+    new THREE.MeshStandardMaterial({ color: 0x1a2a3a, emissive: 0x4fa0d9, emissiveIntensity: 0.5 }),
+  );
+  screen.position.set(0, 0.95, S * 0.141);
+  group.add(screen);
+  const slot = new THREE.Mesh(
+    new THREE.BoxGeometry(0.16, 0.03, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0x0a0a0a }),
+  );
+  slot.position.set(0, 0.6, S * 0.141);
+  group.add(slot);
+  return castAll(group);
+}
+
+function planterMesh(color) {
+  const group = new THREE.Group();
+  const pot = new THREE.Mesh(
+    new THREE.CylinderGeometry(S * 0.3, S * 0.24, 0.35, 12),
+    new THREE.MeshStandardMaterial({ color }),
+  );
+  pot.position.set(0, 0.175, 0);
+  group.add(pot);
+  const foliageMat = new THREE.MeshStandardMaterial({ color: 0x4f8f45, roughness: 0.9 });
+  for (let i = 0; i < 3; i++) {
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(0.18 - i * 0.02, 8, 8), foliageMat);
+    puff.position.set(0, 0.5 + i * 0.18, 0);
+    group.add(puff);
+  }
+  return castAll(group);
+}
+
 // A yellow/black hazard-stripe strip along one edge of a platform cell,
 // facing whichever neighboring cell isn't itself a platform/waiting area
 // (i.e. facing the track). `side` is 'north'|'south'|'east'|'west'.
@@ -537,6 +654,11 @@ const BUILDERS = {
   escalator: escalatorMesh,
   elevator: elevatorMesh,
   entrance: entranceMesh,
+  vending_machine: vendingMachineMesh,
+  security_booth: securityBoothMesh,
+  luggage_lockers: luggageLockersMesh,
+  atm: atmMesh,
+  planter: planterMesh,
 };
 
 export function buildStationFurnitureMesh(id, color) {

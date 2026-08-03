@@ -76,6 +76,11 @@ export const STATION_INTERIOR_OBJECTS = [
   { id: 'stairs', name: 'Stairs', icon: '🪜', category: 'circulation', color: '#8f8f8f', cost: 4000, walkable: true },
   { id: 'escalator', name: 'Escalator', icon: '🔼', category: 'circulation', color: '#4fae8f', cost: 15000, walkable: true },
   { id: 'elevator', name: 'Elevator (accessible)', icon: '🛗', category: 'circulation', color: '#4f8fae', cost: 25000, walkable: true, accessible: true },
+  { id: 'vending_machine', name: 'Vending Machine', icon: '🥤', category: 'amenity', color: '#d95f5f', cost: 1800, walkable: false },
+  { id: 'security_booth', name: 'Security Booth', icon: '👮', category: 'amenity', color: '#4a5a8a', cost: 9000, walkable: false },
+  { id: 'luggage_lockers', name: 'Luggage Lockers', icon: '🧳', category: 'amenity', color: '#6a6a72', cost: 5000, walkable: false },
+  { id: 'atm', name: 'ATM', icon: '🏧', category: 'amenity', color: '#3d6ba8', cost: 3000, walkable: false },
+  { id: 'planter', name: 'Planter / Greenery', icon: '🪴', category: 'amenity', color: '#4f8f5a', cost: 500, walkable: false },
 ];
 
 export function stationInteriorObject(id) { return STATION_INTERIOR_OBJECTS.find(o => o.id === id); }
@@ -107,6 +112,14 @@ export const STATION_ARCHITECTURE_STYLES = [
     // rather than the flat box+roof the other styles share.
     id: 'futuristic', name: 'Futuristic Canopy', icon: '🌿',
     wall: 0xf2f4f0, trim: 0x2f7a45, roof: 0xbfe6f2, accent: 0x3ee06a,
+  },
+  {
+    id: 'art_deco', name: 'Art Deco', icon: '🏆',
+    wall: 0xd9c68a, trim: 0x2a2a2a, roof: 0x2f4a3a, accent: 0xd4af37,
+  },
+  {
+    id: 'industrial', name: 'Industrial Steel', icon: '⚙️',
+    wall: 0x76797e, trim: 0x2a2a2a, roof: 0x3a3a3a, accent: 0xd9682f,
   },
 ];
 
