@@ -171,9 +171,17 @@ export class PassengerSystem {
       routesUsed: [], comfortAccum: 0, reliabilityAccum: 0, stationQualityAccum: 0, ridesBoarded: 0,
     };
 
+    // Rain doesn't push people INTO cars - if anything it discourages driving
+    // as much as walking - it mostly just cancels discretionary trips, and
+    // makes the ones people do take more tolerant of a long transit ride
+    // rather than giving up on it (waiting under cover beats walking/driving
+    // in the wet).
+    const rainBias = this.economy.isRaining ? 0.15 : 0;
+
     if (!plan) {
-      // no transit path at all: 50/50 lost demand vs. car
-      if (Math.random() < 0.5) this.economy.recordLostDemand();
+      // no transit path at all: ~50/50 lost demand vs. car, weighted toward
+      // lost demand (fewer non-essential trips) when it's raining
+      if (Math.random() < 0.5 + rainBias) this.economy.recordLostDemand();
       else { this.economy.recordCarTrip(); this.economy.congestion = Math.min(100, this.economy.congestion + 0.15); }
       return;
     }
@@ -183,7 +191,7 @@ export class PassengerSystem {
       return;
     }
     if (plan.totalMinutes > MAX_ACCEPTABLE_TRIP_MINUTES * 0.92) {
-      if (Math.random() < 0.5) { this.economy.recordLostDemand(); return; }
+      if (Math.random() < 0.5 - rainBias) { this.economy.recordLostDemand(); return; }
       this.economy.recordCarTrip();
       this.economy.congestion = Math.min(100, this.economy.congestion + 0.1);
       return;
@@ -317,13 +325,13 @@ export class PassengerSystem {
     this.passengers.delete(passenger.id);
   }
 
-  update(simMinutes, hour) {
+  update(simMinutes, hour, isWeekend = false) {
     this._now = (this._now || 0) + simMinutes;
     // congestion decays faster when the network is actually serving people well
     const decayRate = 0.01 + (this.citySatisfaction / 100) * 0.03;
     this.economy.congestion = Math.max(0, this.economy.congestion - simMinutes * decayRate);
 
-    this._spawnPassengers(simMinutes, hour);
+    this._spawnPassengers(simMinutes, hour, isWeekend);
 
     for (const passenger of [...this.passengers.values()]) {
       if (this._now - passenger.bornAt > ABANDON_AFTER_MINUTES) { this._forceAbandon(passenger); continue; }
@@ -344,12 +352,12 @@ export class PassengerSystem {
     this._updateMeshes();
   }
 
-  _spawnPassengers(simMinutes, hour) {
+  _spawnPassengers(simMinutes, hour, isWeekend) {
     const { residential, jobsZones } = this.city.demandZones();
     if (!residential.length || !jobsZones.length) return;
 
-    const totalMult = TimeSystem.demandMultiplier(hour);
-    const reverseFrac = TimeSystem.reverseCommuteFraction(hour);
+    const totalMult = TimeSystem.demandMultiplier(hour, isWeekend);
+    const reverseFrac = TimeSystem.reverseCommuteFraction(hour, isWeekend);
     const forwardMult = totalMult * (1 - reverseFrac);
     const reverseMult = totalMult * reverseFrac;
 

@@ -8,6 +8,13 @@ export function bumpVehicleIdCounter(n) { _vId = Math.max(_vId, n); }
 const WEAR_MILEAGE_KM = 50000; // wearFactor reaches ~0.6 contribution around this odometer
 const WEAR_AGE_DAYS = 365;     // and ~0.4 contribution around one in-game year
 
+// Traffic realism: vehicles ease toward their target speed instead of
+// snapping to it (visible accel leaving a stop, braking on approach), and
+// won't drive through a slower/dwelling vehicle ahead of them on the same
+// route/direction - they queue behind it instead, so busy routes visibly bunch.
+const ACCEL_RAMP_MINUTES = 2;   // sim-minutes to go from a stop to full speed
+const MIN_FOLLOWING_GAP = 3;    // world units of nose-to-tail clearance
+
 function addCrowdingBar(group, carHeight) {
   const y = carHeight + 1.2;
   const barBg = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.35, 0.1), new THREE.MeshBasicMaterial({ color: 0x1a1a1a }));
@@ -157,7 +164,34 @@ export class VehicleSystem {
     return base * (1 - vehicle.wearFactor * 0.35);
   }
 
+  // Nearest vehicle strictly ahead of `self` on the same route, in the same
+  // direction of travel - returns the gap distance, or null if there isn't
+  // one (used to keep vehicles from driving through each other).
+  _gapToVehicleAhead(route, self, vehiclesOnRoute) {
+    if (!vehiclesOnRoute || vehiclesOnRoute.length < 2) return null;
+    let best = null;
+    for (const other of vehiclesOnRoute) {
+      if (other === self || other.dir !== self.dir) continue;
+      let diff = self.dir > 0 ? other.dist - self.dist : self.dist - other.dist;
+      if (diff <= 0) {
+        if (!route.loop) continue; // non-loop: not actually ahead of us
+        diff += route.length;
+        if (diff <= 0) continue;
+      }
+      if (best === null || diff < best) best = diff;
+    }
+    return best;
+  }
+
   update(simMinutes) {
+    // Grouped once per tick so the following-distance check below doesn't
+    // re-scan every vehicle for every vehicle.
+    const byRoute = new Map();
+    for (const v of this.vehicles.values()) {
+      if (!byRoute.has(v.routeId)) byRoute.set(v.routeId, []);
+      byRoute.get(v.routeId).push(v);
+    }
+
     for (const vehicle of this.vehicles.values()) {
       const route = this.network.routes.get(vehicle.routeId);
       if (!route || route.path.length < 2 || route.cumDistances.length < 2 || !route.vehicleStats) continue;
@@ -165,12 +199,36 @@ export class VehicleSystem {
 
       if (vehicle.dwell > 0) {
         vehicle.dwell = Math.max(0, vehicle.dwell - simMinutes);
+        vehicle.currentSpeed = 0;
       } else {
         const weatherMult = route.type === 'subway' ? 1 : this.economy.weatherSpeedMultiplier;
-        const speed = route.vehicleStats.topSpeed * this.economy.congestionSpeedMultiplier(route.type) * weatherMult;
+        const targetSpeed = route.vehicleStats.topSpeed * this.economy.congestionSpeedMultiplier(route.type) * weatherMult;
+        // Ease toward the target speed instead of snapping to it, so leaving
+        // a stop shows a visible accel and slowing for one shows a brake.
+        const maxDelta = (route.vehicleStats.topSpeed / ACCEL_RAMP_MINUTES) * simMinutes;
+        const prevSpeed = vehicle.currentSpeed || 0;
+        const speed = prevSpeed < targetSpeed
+          ? Math.min(targetSpeed, prevSpeed + maxDelta)
+          : Math.max(0, prevSpeed - maxDelta);
+        vehicle.currentSpeed = speed;
+
         const prevDist = vehicle.dist;
-        let newDist = prevDist + speed * simMinutes * vehicle.dir;
-        this._accumulateWear(vehicle, simMinutes, speed * simMinutes);
+        let travel = speed * simMinutes * vehicle.dir;
+
+        // Don't drive through whichever vehicle is directly ahead on the
+        // same route/direction - queue behind it instead. Once the gap is
+        // already at/below the minimum, this clamps travel to exactly zero
+        // rather than letting it keep creeping closer tick after tick (a
+        // fractional "crawl allowance" here would asymptotically approach
+        // a collision instead of holding a stable minimum gap).
+        const gapAhead = this._gapToVehicleAhead(route, vehicle, byRoute.get(route.id));
+        if (gapAhead !== null) {
+          const maxTravel = Math.max(0, gapAhead - MIN_FOLLOWING_GAP);
+          if (Math.abs(travel) > maxTravel) travel = maxTravel * vehicle.dir;
+        }
+
+        let newDist = prevDist + travel;
+        this._accumulateWear(vehicle, simMinutes, Math.abs(travel));
         const cum = route.cumDistances;
         const seq = route.sequenceStationIds;
         const total = route.length;

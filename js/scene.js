@@ -36,8 +36,50 @@ export class SceneManager {
 
     this.topDown = false;
     this._preTopDownState = null;
+    this.isRaining = false;
+    this.rainPoints = null;
 
     window.addEventListener('resize', () => this.onResize());
+  }
+
+  // Ambient day-to-day rain (see economy.js's isRaining, distinct from
+  // events.js's rarer weather_slow storm disruption) - a simple falling
+  // point-cloud built lazily on first rain and just toggled visible/hidden
+  // afterward, rather than added/removed from the scene each time.
+  setWeather(isRaining) {
+    this.isRaining = isRaining;
+    if (isRaining && !this.rainPoints) this._buildRain();
+    if (this.rainPoints) this.rainPoints.visible = isRaining;
+  }
+
+  _buildRain() {
+    const count = 900;
+    const positions = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = Math.random() * WORLD_SIZE;
+      positions[i * 3 + 1] = Math.random() * 70;
+      positions[i * 3 + 2] = Math.random() * WORLD_SIZE;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+      color: 0xaac4e0, size: 0.5, transparent: true, opacity: 0.5,
+      sizeAttenuation: true, depthWrite: false,
+    });
+    this.rainPoints = new THREE.Points(geo, mat);
+    this.scene.add(this.rainPoints);
+  }
+
+  _updateRain(dtSeconds) {
+    if (!this.rainPoints || !this.rainPoints.visible) return;
+    const pos = this.rainPoints.geometry.attributes.position;
+    const fallSpeed = 45; // world units/sec
+    for (let i = 0; i < pos.count; i++) {
+      let y = pos.getY(i) - fallSpeed * dtSeconds;
+      if (y < 0) y = 60 + Math.random() * 10;
+      pos.setY(i, y);
+    }
+    pos.needsUpdate = true;
   }
 
   _buildLights() {
@@ -126,8 +168,9 @@ export class SceneManager {
     this.renderer.setSize(w, h);
   }
 
-  render() {
+  render(dtSeconds = 0.016) {
     this.controls.update();
+    this._updateRain(dtSeconds);
     this.renderer.render(this.scene, this.camera);
   }
 }

@@ -142,7 +142,9 @@ export class UIController {
     this.dom.congestion.classList.toggle('warn', congestion >= 40 && congestion < 70);
     this.dom.congestion.classList.toggle('danger', congestion >= 70);
 
-    this.dom.date.textContent = this.timeSystem.formatDate();
+    const seasonIcon = { Spring: '🌱', Summer: '☀️', Autumn: '🍂', Winter: '❄️' }[this.economy.season] || '';
+    const rainIcon = this.economy.isRaining ? ' 🌧️' : '';
+    this.dom.date.textContent = `${this.timeSystem.formatDate()} ${seasonIcon}${rainIcon}`;
     this.refreshDisruptionBadge();
   }
 
@@ -1014,6 +1016,8 @@ export class UIController {
       <div class="row"><span>Lost demand today</span><b>${this.economy.lostDemandToday}</b></div>
       <div class="row"><span>Car trips today</span><b>${this.economy.carTripsToday}</b></div>
       <div class="row"><span>Road congestion</span><b>${Math.round(this.economy.congestion)}%</b></div>
+      <div class="row"><span>Fuel market index</span><b style="color:${this.economy.baseFuelIndex > 1.05 ? '#ff6b6b' : this.economy.baseFuelIndex < 0.95 ? '#6ee7c9' : 'inherit'}">×${this.economy.baseFuelIndex.toFixed(2)}</b></div>
+      <div class="row"><span>Season</span><b>${this.economy.season}${this.economy.isRaining ? ' · Rain' : ''}</b></div>
       ${this.economy.fuelPriceMultiplier !== 1 ? `<div class="row violation">⚠️ Fuel price shock: running costs ×${this.economy.fuelPriceMultiplier.toFixed(2)} for combustion vehicles</div>` : ''}
       ${this.economy.subsidyMultiplier !== 1 ? `<div class="row violation">⚠️ Subsidy cut: per-rider government top-up reduced</div>` : ''}
       ${this.economy.weatherSpeedMultiplier !== 1 ? `<div class="row violation">⚠️ Storm: surface routes running slower</div>` : ''}

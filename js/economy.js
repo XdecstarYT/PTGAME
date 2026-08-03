@@ -2,6 +2,7 @@ import {
   STARTING_BUDGET, BASE_FARE, STATION_MAINTENANCE_PER_DAY, DEFAULT_REGULATION_ID,
   SUBSIDY_PER_RIDER, COMBUSTION_POWERTRAINS,
 } from './config.js';
+import { TimeSystem } from './time.js';
 
 // Budget, fares, operating costs and the finance dashboard's data feed.
 // Kept independent of rendering/network so it's easy to reason about.
@@ -16,8 +17,20 @@ export class Economy {
 
     // temporary multipliers events.js flips during disruptions/economic shocks
     this.weatherSpeedMultiplier = 1;  // surface (non-subway) speed during storms
-    this.fuelPriceMultiplier = 1;     // running cost for combustion powertrains
+    this.fuelPriceMultiplier = 1;     // running cost for combustion powertrains, on top of baseFuelIndex
     this.subsidyMultiplier = 1;       // government top-up per rider
+
+    // A slow-drifting fuel market index (separate from events.js's sudden
+    // fuel_spike shocks) so combustion running costs feel like a live market
+    // instead of sitting flat at 1x between rare disruption events.
+    this.baseFuelIndex = 1;
+    this._fuelDrift = 0;
+
+    // Ambient day-to-day weather/season - distinct from events.js's rarer,
+    // more severe weather_slow/weather_bridge disruptions. Drives the rain
+    // particles/audio layer and a small passenger mode-choice nudge.
+    this.season = TimeSystem.seasonForDay(1);
+    this.isRaining = false;
 
     this.dailyIncome = 0;
     this.dailyExpense = 0;
@@ -113,13 +126,26 @@ export class Economy {
 
   removeRouteStats(routeId) { this.routeStats.delete(routeId); }
 
-  // called once per elapsed sim-day
-  applyDailyCosts(network) {
+  // called once per elapsed sim-day. vehicleSystem is optional (older
+  // callers/tests can omit it) - without it, running costs just skip the
+  // wear surcharge below rather than throwing.
+  applyDailyCosts(network, vehicleSystem = null) {
     for (const route of network.routes.values()) {
       if (!route.committed || !route.vehicleStats) continue;
       let cost = route.vehicleStats.runningCostPerDay * route.frequency;
       const model = network.catalog?.get(route.modelId);
-      if (model && COMBUSTION_POWERTRAINS.includes(model.powertrainId)) cost *= this.fuelPriceMultiplier;
+      if (model && COMBUSTION_POWERTRAINS.includes(model.powertrainId)) cost *= this.baseFuelIndex * this.fuelPriceMultiplier;
+      // A worn, aging fleet costs more to keep running - the same
+      // wear-vs-reliability tradeoff vehicles.js already models for speed,
+      // applied here to daily upkeep so refurbishing/replacing old vehicles
+      // is a real cost decision, not just a speed/comfort one.
+      if (vehicleSystem) {
+        const fleet = route.vehicleIds.map(id => vehicleSystem.vehicles.get(id)).filter(Boolean);
+        if (fleet.length) {
+          const avgWear = fleet.reduce((sum, v) => sum + v.wearFactor, 0) / fleet.length;
+          cost *= 1 + avgWear * 0.4;
+        }
+      }
       this.spend(cost, route.id);
 
       if (route.vehicleStats.adRevenuePerDay) {
@@ -157,6 +183,22 @@ export class Economy {
     return 1 - (this.congestion / 100) * 0.5;
   }
 
+  // Advances the slow-drifting fuel market index and rolls the day's ambient
+  // season/weather - called once per elapsed sim-day, for the day that's
+  // STARTING (not the one that just ended via closeDay), so the new
+  // index/weather takes effect from the start of that day. Separate from
+  // events.js's rarer, more severe weather_slow/fuel_spike disruptions,
+  // which still apply on top of this as temporary multipliers.
+  advanceDailyMarket(day) {
+    const wave = Math.sin(day / 30) * 0.08;
+    this._fuelDrift = Math.max(-0.15, Math.min(0.15, this._fuelDrift + (Math.random() - 0.5) * 0.02));
+    this.baseFuelIndex = Math.max(0.75, Math.min(1.35, 1 + wave + this._fuelDrift));
+
+    this.season = TimeSystem.seasonForDay(day);
+    const rainChance = { Spring: 0.35, Summer: 0.15, Autumn: 0.4, Winter: 0.3 }[this.season] ?? 0.25;
+    this.isRaining = Math.random() < rainChance;
+  }
+
   closeDay(day, satisfaction, coverage) {
     this.history.push({
       day,
@@ -189,6 +231,8 @@ export class Economy {
       activeRegulationId: this.activeRegulationId, congestion: this.congestion,
       weatherSpeedMultiplier: this.weatherSpeedMultiplier,
       fuelPriceMultiplier: this.fuelPriceMultiplier, subsidyMultiplier: this.subsidyMultiplier,
+      baseFuelIndex: this.baseFuelIndex, _fuelDrift: this._fuelDrift,
+      season: this.season, isRaining: this.isRaining,
       dailyIncome: this.dailyIncome, dailyExpense: this.dailyExpense, dailyRidership: this.dailyRidership,
       lostDemandToday: this.lostDemandToday, carTripsToday: this.carTripsToday,
       dailyFreightRevenue: this.dailyFreightRevenue, totalFreightRevenue: this.totalFreightRevenue,

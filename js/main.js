@@ -156,6 +156,7 @@ const audioBtn = document.getElementById('btn-audio-toggle');
 audioBtn.addEventListener('click', () => {
   const on = audioSystem.toggleMute();
   audioBtn.textContent = on ? '🔊' : '🔇';
+  if (on) audioSystem.setRaining(economy.isRaining); // sync immediately instead of waiting for the next day tick
 });
 vehicleSystem.on('arrive', ({ vehicle }) => {
   audioSystem.playArrivalChime();
@@ -236,12 +237,12 @@ function checkMilestones() {
 timeSystem.on('tick', (simMinutes) => {
   const hour = timeSystem.hour;
   city.update(simMinutes);
-  passengerSystem.update(simMinutes, hour);
+  passengerSystem.update(simMinutes, hour, timeSystem.isWeekend);
   vehicleSystem.update(simMinutes);
   cargoSystem.update(simMinutes);
   sceneManager.setTimeOfDay(hour);
   city.setWindowGlow(hour);
-  audioSystem.setRushHourIntensity(TimeSystem.demandMultiplier(hour));
+  audioSystem.setRushHourIntensity(TimeSystem.demandMultiplier(hour, timeSystem.isWeekend));
 });
 
 let pendingUnlockNotes = [];
@@ -250,8 +251,11 @@ timeSystem.on('newDay', (newDay) => {
   const endedDay = newDay - 1;
   const satisfaction = passengerSystem.citySatisfaction;
   const coverage = network.coveragePercent();
-  economy.applyDailyCosts(network);
+  economy.applyDailyCosts(network, vehicleSystem);
   economy.closeDay(endedDay, satisfaction, coverage);
+  economy.advanceDailyMarket(newDay);
+  sceneManager.setWeather(economy.isRaining);
+  audioSystem.setRaining(economy.isRaining);
 
   // ambient daily nudge: a poorly-covered city drifts toward more car traffic
   economy.congestion = Math.max(0, Math.min(100, economy.congestion + (1 - coverage) * 8 - coverage * 4));
@@ -302,7 +306,7 @@ function animate(now) {
   lastTime = now;
 
   timeSystem.update(dt);
-  sceneManager.render();
+  sceneManager.render(dt / 1000);
   if (schematicView.visible) schematicView.render();
   if (vehicleDesigner.isOpen) vehicleDesigner.render(dt / 1000);
   if (buildingEditor.isOpen) buildingEditor.render(dt / 1000);

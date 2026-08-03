@@ -8,6 +8,7 @@ export class AudioSystem {
     this.muted = true;
     this.masterGain = null;
     this.ambienceGain = null;
+    this.rainGain = null;
     this._lastChimeAt = -Infinity;
   }
 
@@ -20,6 +21,7 @@ export class AudioSystem {
     this.masterGain.gain.value = 0;
     this.masterGain.connect(this.ctx.destination);
     this._buildAmbience();
+    this._buildRainLayer();
   }
 
   toggleMute() {
@@ -53,6 +55,30 @@ export class AudioSystem {
     if (!this.ctx || !this.ambienceGain) return;
     const target = 0.02 + Math.max(0, Math.min(1, mult)) * 0.09;
     this.ambienceGain.gain.setTargetAtTime(target, this.ctx.currentTime, 2);
+  }
+
+  // A second, brighter noise layer (highpass instead of lowpass) reading as
+  // rain patter, gated by economy.js's ambient isRaining day-to-day weather.
+  _buildRainLayer() {
+    const bufferSize = 2 * this.ctx.sampleRate;
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * 0.3;
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+    noise.loop = true;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.value = 1800;
+    this.rainGain = this.ctx.createGain();
+    this.rainGain.gain.value = 0;
+    noise.connect(filter).connect(this.rainGain).connect(this.masterGain);
+    noise.start();
+  }
+
+  setRaining(isRaining) {
+    if (!this.ctx || !this.rainGain) return;
+    this.rainGain.gain.setTargetAtTime(isRaining ? 0.05 : 0, this.ctx.currentTime, 3);
   }
 
   playArrivalChime() {
