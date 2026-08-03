@@ -76,6 +76,7 @@ export class UIController {
       routeChipStrip: document.getElementById('route-chip-strip'),
       btnFinance: document.getElementById('btn-finance'),
       btnRoutes: document.getElementById('btn-routes'),
+      btnFleet: document.getElementById('btn-fleet'),
       btnDisruptions: document.getElementById('btn-disruptions'),
       disruptionBadge: document.getElementById('disruption-badge'),
       btnContracts: document.getElementById('btn-contracts'),
@@ -176,6 +177,7 @@ export class UIController {
   _wireBottombar() {
     this.dom.btnFinance.addEventListener('click', () => this.openFinanceModal());
     this.dom.btnRoutes.addEventListener('click', () => this.openRoutesModal());
+    this.dom.btnFleet.addEventListener('click', () => this.openFleetModal());
     this.dom.btnDisruptions.addEventListener('click', () => this.openDisruptionsModal());
     this.dom.btnContracts.addEventListener('click', () => this.openContractsModal());
   }
@@ -987,6 +989,62 @@ export class UIController {
     this.dom.modalContent.querySelectorAll('[data-view]').forEach(btn => {
       btn.addEventListener('click', () => { this.closeModal(); this.selectRoute(btn.dataset.view); });
     });
+  }
+
+  // ---------------- modal: fleet dashboard ----------------
+
+  openFleetModal() {
+    const vehicles = [...this.vehicleSystem.vehicles.values()];
+    const trucks = this.cargoSystem ? [...this.cargoSystem.trucks.values()] : [];
+
+    const brokenVehicles = vehicles.filter(v => v.brokenDown).length;
+    const brokenTrucks = trucks.filter(t => t.brokenDown).length;
+    const avgWear = vehicles.length ? vehicles.reduce((s, v) => s + v.wearFactor, 0) / vehicles.length : 0;
+    const avgAge = vehicles.length ? vehicles.reduce((s, v) => s + v.ageSimDays, 0) / vehicles.length : 0;
+    const wearColor = (w) => w > 0.7 ? '#ff6b6b' : w > 0.4 ? '#ffd166' : '#6ee7c9';
+    const totalBroken = brokenVehicles + brokenTrucks;
+
+    const vehicleRows = vehicles.map(v => {
+      const route = this.network.routes.get(v.routeId);
+      const model = this.catalog.get(v.modelId);
+      const status = v.brokenDown ? '<span style="color:#ff6b6b">Broken down</span>' : '<span style="color:#6ee7c9">In service</span>';
+      return `<tr>
+        <td>${model?.name || v.modelId}</td>
+        <td>${route?.name || '—'}</td>
+        <td>${Math.round(v.mileageKm).toLocaleString('en-US')} km</td>
+        <td>${v.ageSimDays.toFixed(1)} d</td>
+        <td style="color:${wearColor(v.wearFactor)}">${Math.round(v.wearFactor * 100)}%</td>
+        <td>${status}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6">No vehicles in service yet.</td></tr>';
+
+    const truckRows = trucks.map(t => {
+      const depot = this.cargoSystem.depots.get(t.depotId);
+      const model = this.catalog.get(t.modelId);
+      const status = t.brokenDown ? '<span style="color:#ff6b6b">Broken down</span>'
+        : t.state === 'idle' ? '<span style="color:#9aa0a8">Idle</span>'
+        : `<span style="color:#6ee7c9">${t.state}</span>`;
+      return `<tr>
+        <td>${model?.name || t.modelId}</td>
+        <td>${depot?.name || '—'}</td>
+        <td>${status}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="3">No trucks in service yet.</td></tr>';
+
+    const html = `
+      <div class="row"><span>Passenger vehicles in service</span><b>${vehicles.length}</b></div>
+      <div class="row"><span>Freight trucks in service</span><b>${trucks.length}</b></div>
+      <div class="row"><span>Average wear (passenger fleet)</span><b style="color:${wearColor(avgWear)}">${Math.round(avgWear * 100)}%</b></div>
+      <div class="row"><span>Average vehicle age</span><b>${avgAge.toFixed(1)} days</b></div>
+      <div class="row"><span>Broken down (all fleets)</span><b style="color:${totalBroken > 0 ? '#ff6b6b' : '#6ee7c9'}">${totalBroken}</b></div>
+      <h4>Passenger fleet</h4>
+      <table><thead><tr><th>Model</th><th>Route</th><th>Mileage</th><th>Age</th><th>Wear</th><th>Status</th></tr></thead>
+      <tbody>${vehicleRows}</tbody></table>
+      <h4>Freight fleet</h4>
+      <table><thead><tr><th>Model</th><th>Depot</th><th>Status</th></tr></thead>
+      <tbody>${truckRows}</tbody></table>
+    `;
+    this.openModal('Fleet Dashboard', html);
   }
 
   // ---------------- generic modal ----------------
