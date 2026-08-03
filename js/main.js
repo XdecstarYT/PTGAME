@@ -166,6 +166,8 @@ vehicleSystem.on('arrive', ({ vehicle }) => {
 
 sceneManager.setTimeOfDay(timeSystem.hour);
 city.setWindowGlow(timeSystem.hour);
+city.setStreetlightGlow(timeSystem.hour);
+city.setSeason(economy.season);
 ui.refreshHud();
 ui.showToast('Welcome! Pick the Station tool and click a colored zone tile near a road to start your network.');
 
@@ -242,6 +244,7 @@ timeSystem.on('tick', (simMinutes) => {
   cargoSystem.update(simMinutes);
   sceneManager.setTimeOfDay(hour);
   city.setWindowGlow(hour);
+  city.setStreetlightGlow(hour);
   audioSystem.setRushHourIntensity(TimeSystem.demandMultiplier(hour, timeSystem.isWeekend));
 });
 
@@ -256,6 +259,7 @@ timeSystem.on('newDay', (newDay) => {
   economy.advanceDailyMarket(newDay);
   sceneManager.setWeather(economy.isRaining);
   audioSystem.setRaining(economy.isRaining);
+  city.setSeason(economy.season);
 
   // ambient daily nudge: a poorly-covered city drifts toward more car traffic
   economy.congestion = Math.max(0, Math.min(100, economy.congestion + (1 - coverage) * 8 - coverage * 4));

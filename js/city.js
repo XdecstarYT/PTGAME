@@ -22,6 +22,11 @@ const DEFAULT_SCENARIO = {
   coreRadiusMult: 1, ringRadiusMult: 1,
 };
 
+// Park foliage tint per season (js/time.js's TimeSystem.SEASONS) - applied
+// live via setSeason() without a full mesh rebuild, the same
+// cached-materials-array pattern setWindowGlow() already uses for day/night.
+const SEASON_FOLIAGE_COLORS = { Spring: 0x8fd66a, Summer: 0x4f9a4a, Autumn: 0xc9803d, Winter: 0xd8dbd2 };
+
 export class City {
   constructor(seed = Math.floor(Math.random() * 1e9), scenarioConfig = {}) {
     this.seed = seed;
@@ -34,6 +39,7 @@ export class City {
     this._buildingsGroup = null;
     this.customBuildings = new Map(); // "x_z" -> { x, z, design, group }
     this._customBuildingsGroup = null;
+    this._season = 'Summer'; // updated by setSeason(), see main.js's newDay handler
 
     this._generateGrid();
   }
@@ -417,6 +423,8 @@ export class City {
     const accessoryBoxGeo = new THREE.BoxGeometry(1, 1, 1);
     const accessoryCylGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 8);
     this._windowMats = [];
+    this._foliageMats = [];
+    this._streetlightMats = [];
 
     for (const type of buildingTypes) {
       const tiles = (byType[type] || []).filter(t => !this.customBuildings.has(`${t.x}_${t.z}`));
@@ -556,6 +564,89 @@ export class City {
       group.add(mesh, roofMesh, windowMesh, plinthMesh, accessoryMesh);
     }
 
+    // Park greenery - the one zone type that previously had nothing sitting
+    // on top of its ground pad. A couple of low-poly trees per tile, tinted
+    // by the current season (see setSeason()) and lit as normal (no
+    // day/night hook needed - unlike windows/streetlights, foliage doesn't
+    // emit light).
+    const parkTiles = byType[ZONE.PARK] || [];
+    if (parkTiles.length) {
+      const treesPerTile = 2;
+      const trunkGeo = new THREE.CylinderGeometry(1, 1.2, 1, 6);
+      const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.9 });
+      const foliageGeo = new THREE.IcosahedronGeometry(1, 0);
+      const foliageMat = new THREE.MeshStandardMaterial({
+        color: SEASON_FOLIAGE_COLORS[this._season] ?? SEASON_FOLIAGE_COLORS.Summer,
+        roughness: 0.85, flatShading: true,
+      });
+      this._foliageMats.push(foliageMat);
+
+      const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, parkTiles.length * treesPerTile);
+      const foliageMesh = new THREE.InstancedMesh(foliageGeo, foliageMat, parkTiles.length * treesPerTile);
+      trunkMesh.castShadow = true; trunkMesh.receiveShadow = true;
+      foliageMesh.castShadow = true;
+
+      const tm = new THREE.Matrix4();
+      const identityQ = new THREE.Quaternion();
+      let idx = 0;
+      for (const t of parkTiles) {
+        for (let k = 0; k < treesPerTile; k++) {
+          const treeSeed = (t.seed * (k + 3.1)) % 1;
+          const trunkH = 1.6 + treeSeed * 1.2;
+          const trunkR = 0.18 + treeSeed * 0.08;
+          const angle = (k / treesPerTile) * Math.PI * 2 + t.seed * Math.PI * 2;
+          const radius = TILE_SIZE * 0.22;
+          const tx = t.worldX + Math.cos(angle) * radius;
+          const tz = t.worldZ + Math.sin(angle) * radius;
+
+          tm.compose(new THREE.Vector3(tx, trunkH / 2, tz), identityQ, new THREE.Vector3(trunkR, trunkH, trunkR));
+          trunkMesh.setMatrixAt(idx, tm);
+
+          const canopyR = 1.1 + treeSeed * 0.6;
+          tm.compose(new THREE.Vector3(tx, trunkH + canopyR * 0.7, tz), identityQ, new THREE.Vector3(canopyR, canopyR, canopyR));
+          foliageMesh.setMatrixAt(idx, tm);
+          idx++;
+        }
+      }
+      trunkMesh.instanceMatrix.needsUpdate = true;
+      foliageMesh.instanceMatrix.needsUpdate = true;
+      group.add(trunkMesh, foliageMesh);
+    }
+
+    // Streetlights along roads - spaced every other road tile (a checkerboard
+    // pick) so streets read as lit without a lamp on literally every tile.
+    // The lamp head glows at night via setStreetlightGlow() (see main.js's
+    // day/night tick, called alongside setWindowGlow()).
+    const litRoadTiles = (byType[ZONE.ROAD] || []).filter(t => (t.x + t.z) % 2 === 0);
+    if (litRoadTiles.length) {
+      const poleH = 5;
+      const poleGeo = new THREE.CylinderGeometry(0.12, 0.12, 1, 6);
+      const poleMat = new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.6, metalness: 0.3 });
+      const lampGeo = new THREE.SphereGeometry(1, 8, 6);
+      const lampMat = new THREE.MeshStandardMaterial({
+        color: 0xfff3c9, emissive: 0xfff3c9, emissiveIntensity: 0, roughness: 0.4,
+      });
+      this._streetlightMats.push(lampMat);
+
+      const poleMesh = new THREE.InstancedMesh(poleGeo, poleMat, litRoadTiles.length);
+      const lampMesh = new THREE.InstancedMesh(lampGeo, lampMat, litRoadTiles.length);
+      poleMesh.castShadow = true;
+
+      const lm = new THREE.Matrix4();
+      const identityQ2 = new THREE.Quaternion();
+      litRoadTiles.forEach((t, i) => {
+        const cornerX = t.worldX + TILE_SIZE * 0.4;
+        const cornerZ = t.worldZ + TILE_SIZE * 0.4;
+        lm.compose(new THREE.Vector3(cornerX, poleH / 2, cornerZ), identityQ2, new THREE.Vector3(1, poleH, 1));
+        poleMesh.setMatrixAt(i, lm);
+        lm.compose(new THREE.Vector3(cornerX, poleH + 0.25, cornerZ), identityQ2, new THREE.Vector3(0.35, 0.35, 0.35));
+        lampMesh.setMatrixAt(i, lm);
+      });
+      poleMesh.instanceMatrix.needsUpdate = true;
+      lampMesh.instanceMatrix.needsUpdate = true;
+      group.add(poleMesh, lampMesh);
+    }
+
     this.scene.add(group);
   }
 
@@ -567,5 +658,28 @@ export class City {
     const dayness = Math.max(0, Math.sin(angle));
     const glow = Math.max(0, 0.9 - dayness * 1.1);
     for (const mat of this._windowMats) mat.emissiveIntensity = glow;
+  }
+
+  // Same day/night formula as setWindowGlow(), just brighter (streetlights
+  // read as small point-like bulbs rather than a big glowing window band) -
+  // call alongside it from the same tick.
+  setStreetlightGlow(hour) {
+    if (!this._streetlightMats) return;
+    const angle = (hour / 24) * Math.PI * 2 - Math.PI / 2;
+    const dayness = Math.max(0, Math.sin(angle));
+    const glow = Math.max(0, 1.1 - dayness * 1.3);
+    for (const mat of this._streetlightMats) mat.emissiveIntensity = glow;
+  }
+
+  // season is one of TimeSystem.SEASONS ('Spring'|'Summer'|'Autumn'|'Winter')
+  // - recolors park foliage without a full mesh rebuild. Also stashes the
+  // season so a later rebuildMeshes() (tier upgrade, custom building, etc)
+  // starts new foliage materials off in the right color instead of
+  // defaulting back to Summer.
+  setSeason(season) {
+    this._season = season;
+    if (!this._foliageMats) return;
+    const color = SEASON_FOLIAGE_COLORS[season] ?? SEASON_FOLIAGE_COLORS.Summer;
+    for (const mat of this._foliageMats) mat.color.setHex(color);
   }
 }
