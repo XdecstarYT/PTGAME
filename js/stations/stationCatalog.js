@@ -1,4 +1,7 @@
+import { famousStationDesigns } from './famousStations.js';
+
 const STORAGE_KEY = 'ptgame_station_catalog_v1';
+const SEEDED_FLAG_KEY = 'ptgame_station_catalog_seeded_v1';
 let _idCounter = 1;
 function nextId() { return `stn_${Date.now().toString(36)}_${_idCounter++}`; }
 
@@ -20,11 +23,35 @@ export class StationCatalog {
   _load() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const arr = JSON.parse(raw);
-      for (const d of arr) if (isValidDesignShape(d) && d.id) this.designs.set(d.id, d);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        for (const d of arr) if (isValidDesignShape(d) && d.id) this.designs.set(d.id, d);
+      }
     } catch (e) {
       // corrupt/unavailable storage - start with an empty catalog
+    }
+    this._seedFamousStationsIfNeeded();
+  }
+
+  // One-time starter gallery of famous-station-inspired designs (see
+  // famousStations.js), gated on a persisted flag rather than "catalog is
+  // currently empty" - so a player who deliberately deletes all of them
+  // doesn't have them silently reappear on the next reload.
+  _seedFamousStationsIfNeeded() {
+    try {
+      if (localStorage.getItem(SEEDED_FLAG_KEY)) return;
+    } catch (e) {
+      // localStorage unavailable - fall through and seed in-memory for this
+      // session anyway, just without a persisted flag to prevent a re-seed.
+    }
+    for (const design of famousStationDesigns()) {
+      design.id = nextId();
+      design.createdAt = Date.now();
+      this.designs.set(design.id, design);
+    }
+    this._persist();
+    try { localStorage.setItem(SEEDED_FLAG_KEY, '1'); } catch (e) {
+      // storage unavailable - nothing to do, this session just seeds once
     }
   }
 
