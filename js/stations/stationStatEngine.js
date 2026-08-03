@@ -146,3 +146,26 @@ export function computeStationStats(design) {
     warnings,
   };
 }
+
+// Sums every shop cell's revenuePerDay across all levels, scaled by how busy
+// the station actually is (capacity vs its tier's target throughput) - an
+// empty, under-used station's shops barely earn anything, a packed one earns
+// close to (or a bit above) the base rate. `stats` can be passed in if the
+// caller already has a fresh computeStationStats() result for this design
+// (e.g. network.js's station.designStats), to avoid recomputing it.
+export function computeStationShopRevenue(design, stats = null) {
+  const s = stats || computeStationStats(design);
+  const ratio = s.targetThroughput > 0
+    ? Math.min(1.5, Math.max(0.15, s.capacity / s.targetThroughput))
+    : 0.5;
+  let base = 0;
+  for (const level of design.levels) {
+    for (const row of level.grid) {
+      for (const cellId of row) {
+        const obj = stationInteriorObject(cellId);
+        if (obj && obj.category === 'shop') base += obj.revenuePerDay || 0;
+      }
+    }
+  }
+  return base * ratio;
+}

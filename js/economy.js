@@ -3,6 +3,7 @@ import {
   SUBSIDY_PER_RIDER, COMBUSTION_POWERTRAINS,
 } from './config.js';
 import { TimeSystem } from './time.js';
+import { computeStationShopRevenue } from './stations/stationStatEngine.js';
 
 // Budget, fares, operating costs and the finance dashboard's data feed.
 // Kept independent of rendering/network so it's easy to reason about.
@@ -38,11 +39,13 @@ export class Economy {
     this.lostDemandToday = 0;
     this.carTripsToday = 0;
     this.dailyFreightRevenue = 0;
+    this.dailyShopRevenue = 0;
 
     this.totalRevenue = 0;
     this.totalExpense = 0;
     this.totalRidership = 0;
     this.totalFreightRevenue = 0;
+    this.totalShopRevenue = 0;
 
     this.routeStats = new Map(); // routeId -> {revenueToday, costToday, revenueTotal, costTotal, ridersToday, ridersTotal}
     this.history = []; // per-day snapshots for the finance dashboard chart
@@ -160,6 +163,20 @@ export class Economy {
     }
     const stationCost = network.stations.size * STATION_MAINTENANCE_PER_DAY;
     if (stationCost > 0) this.spend(stationCost);
+
+    // Passive shop income for designed stations - see stationStatEngine.js's
+    // computeStationShopRevenue(). Legacy/undesigned stations (no .design)
+    // have no shops to earn from, so they're skipped entirely.
+    for (const station of network.stations.values()) {
+      if (!station.design) continue;
+      const revenue = computeStationShopRevenue(station.design, station.designStats);
+      if (revenue <= 0) continue;
+      this.budget += revenue;
+      this.dailyIncome += revenue;
+      this.totalRevenue += revenue;
+      this.dailyShopRevenue += revenue;
+      this.totalShopRevenue += revenue;
+    }
   }
 
   applyWeeklyInterest() {
@@ -212,6 +229,7 @@ export class Economy {
       coverage,
       budget: this.budget,
       freightRevenue: this.dailyFreightRevenue,
+      shopRevenue: this.dailyShopRevenue,
     });
     if (this.history.length > 120) this.history.shift();
     for (const r of this.routeStats.values()) { r.revenueToday = 0; r.costToday = 0; r.ridersToday = 0; }
@@ -221,6 +239,7 @@ export class Economy {
     this.lostDemandToday = 0;
     this.carTripsToday = 0;
     this.dailyFreightRevenue = 0;
+    this.dailyShopRevenue = 0;
   }
 
   // ---------------- save/load ----------------
@@ -236,6 +255,7 @@ export class Economy {
       dailyIncome: this.dailyIncome, dailyExpense: this.dailyExpense, dailyRidership: this.dailyRidership,
       lostDemandToday: this.lostDemandToday, carTripsToday: this.carTripsToday,
       dailyFreightRevenue: this.dailyFreightRevenue, totalFreightRevenue: this.totalFreightRevenue,
+      dailyShopRevenue: this.dailyShopRevenue, totalShopRevenue: this.totalShopRevenue,
       totalRevenue: this.totalRevenue, totalExpense: this.totalExpense, totalRidership: this.totalRidership,
       routeStats: [...this.routeStats.entries()],
       history: this.history,

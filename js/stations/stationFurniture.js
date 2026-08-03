@@ -121,6 +121,162 @@ function kioskMesh(color) {
   return castAll(group);
 }
 
+// Shared sign texture for the shop variants below - a short label on a
+// solid backdrop, same canvas-decal technique used throughout this game
+// for destination signs/depot signs/ad posters.
+function signTexture(text, bg, fg) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 96;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = fg;
+  ctx.font = 'bold 40px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function shopBodyMesh(color) {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(S * 0.78, 1.0, S * 0.78),
+    new THREE.MeshStandardMaterial({ color }),
+  );
+  body.position.set(0, 0.5, 0);
+  group.add(body);
+  const window_ = new THREE.Mesh(
+    new THREE.PlaneGeometry(S * 0.5, 0.4),
+    new THREE.MeshStandardMaterial({ color: 0x1a2230, roughness: 0.25, metalness: 0.3 }),
+  );
+  window_.position.set(0, 0.65, S * 0.391);
+  group.add(window_);
+  return group;
+}
+
+function cafeMesh(color) {
+  const group = shopBodyMesh(color);
+  // Striped awning - alternating color bands via a repeating canvas texture.
+  const stripeCanvas = document.createElement('canvas');
+  stripeCanvas.width = 64; stripeCanvas.height = 16;
+  const sctx = stripeCanvas.getContext('2d');
+  for (let i = 0; i < 8; i++) {
+    sctx.fillStyle = i % 2 === 0 ? '#a9714a' : '#f2e4cf';
+    sctx.fillRect(i * 8, 0, 8, 16);
+  }
+  const stripeTex = new THREE.CanvasTexture(stripeCanvas);
+  const awning = new THREE.Mesh(
+    new THREE.BoxGeometry(S * 1.0, 0.3, 0.3),
+    new THREE.MeshStandardMaterial({ map: stripeTex }),
+  );
+  awning.rotation.x = -0.5;
+  awning.position.set(0, 1.05, S * 0.42);
+  group.add(awning);
+  const sign = new THREE.Mesh(
+    new THREE.PlaneGeometry(S * 0.55, 0.2),
+    new THREE.MeshStandardMaterial({ map: signTexture('CAFÉ', '#3a2418', '#f2c98a') }),
+  );
+  sign.position.set(0, 1.25, S * 0.2);
+  group.add(sign);
+  return castAll(group);
+}
+
+function newsstandMesh(color) {
+  const group = shopBodyMesh(color);
+  const rackMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e8 });
+  const magColors = [0xd9528f, 0x4f7fd9, 0xc9a63d, 0x5fae6f];
+  for (let i = 0; i < 4; i++) {
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(S * 0.18, 0.24, 0.03), new THREE.MeshStandardMaterial({ color: magColors[i] }));
+    mag.position.set(-S * 0.3 + i * (S * 0.2), 0.75, S * 0.4);
+    mag.rotation.x = -0.15;
+    group.add(mag);
+  }
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(S * 0.9, 0.06, S * 0.9), new THREE.MeshStandardMaterial({ color: darker(color, 0.3) }));
+  roof.position.set(0, 1.05, 0);
+  group.add(roof);
+  const sign = new THREE.Mesh(
+    new THREE.PlaneGeometry(S * 0.55, 0.2),
+    new THREE.MeshStandardMaterial({ map: signTexture('NEWS', '#2a2a2a', '#f2c230') }),
+  );
+  sign.position.set(0, 1.0, S * 0.401);
+  group.add(sign);
+  return castAll(group);
+}
+
+function pharmacyMesh(color) {
+  const group = shopBodyMesh(color);
+  const crossMat = new THREE.MeshStandardMaterial({ color: 0x3ee06a, emissive: 0x3ee06a, emissiveIntensity: 0.5 });
+  const vBar = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.32, 0.04), crossMat);
+  const hBar = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.1, 0.04), crossMat);
+  vBar.position.set(0, 1.15, S * 0.4);
+  hBar.position.set(0, 1.15, S * 0.4);
+  group.add(vBar, hBar);
+  const backing = new THREE.Mesh(
+    new THREE.CircleGeometry(0.24, 20),
+    new THREE.MeshStandardMaterial({ color: 0xffffff }),
+  );
+  backing.position.set(0, 1.15, S * 0.39);
+  group.add(backing);
+  return castAll(group);
+}
+
+function techStoreMesh(color) {
+  const group = new THREE.Group();
+  // Glass-fronted body instead of the shared solid shopBodyMesh, to read
+  // as sleeker/more modern than the other shop stalls.
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(S * 0.78, 1.05, S * 0.78),
+    new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.35, roughness: 0.1, metalness: 0.2 }),
+  );
+  body.position.set(0, 0.525, 0);
+  group.add(body);
+  const frameMat = new THREE.MeshStandardMaterial({ color: darker(color, 0.5) });
+  for (const side of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.05, 0.05), frameMat);
+    post.position.set(side * S * 0.38, 0.525, S * 0.38);
+    group.add(post);
+  }
+  const shelf = new THREE.Mesh(new THREE.BoxGeometry(S * 0.6, 0.03, S * 0.4), frameMat);
+  shelf.position.set(0, 0.6, 0);
+  group.add(shelf);
+  for (let i = 0; i < 3; i++) {
+    const gadget = new THREE.Mesh(
+      new THREE.BoxGeometry(0.14, 0.2, 0.02),
+      new THREE.MeshStandardMaterial({ color: 0x0c1420, emissive: 0x4fa0d9, emissiveIntensity: 0.4 }),
+    );
+    gadget.position.set(-S * 0.2 + i * (S * 0.2), 0.72, 0);
+    group.add(gadget);
+  }
+  const sign = new THREE.Mesh(
+    new THREE.PlaneGeometry(S * 0.6, 0.2),
+    new THREE.MeshStandardMaterial({ map: signTexture('TECH', '#0c1420', '#4fa0d9'), emissive: 0xffffff, emissiveIntensity: 0.3 }),
+  );
+  sign.position.set(0, 1.15, S * 0.2);
+  group.add(sign);
+  return castAll(group);
+}
+
+function bookstoreMesh(color) {
+  const group = shopBodyMesh(color);
+  const bookColors = [0x8a4a35, 0x4a6fa5, 0x5fae6f, 0xc9a63d, 0x9d6fae];
+  for (let i = 0; i < 5; i++) {
+    const h = 0.28 + (i % 2) * 0.08;
+    const book = new THREE.Mesh(new THREE.BoxGeometry(S * 0.13, h, 0.16), new THREE.MeshStandardMaterial({ color: bookColors[i] }));
+    book.position.set(-S * 0.32 + i * (S * 0.16), h / 2 + 0.25, S * 0.28);
+    group.add(book);
+  }
+  const sign = new THREE.Mesh(
+    new THREE.PlaneGeometry(S * 0.55, 0.2),
+    new THREE.MeshStandardMaterial({ map: signTexture('BOOKS', '#3a2a4a', '#e8d9f2') }),
+  );
+  sign.position.set(0, 1.05, S * 0.2);
+  group.add(sign);
+  return castAll(group);
+}
+
 function restroomMesh(color) {
   const group = new THREE.Group();
   const body = new THREE.Mesh(
@@ -369,6 +525,11 @@ const BUILDERS = {
   bench: benchMesh,
   ticket_machine: ticketMachineMesh,
   kiosk: kioskMesh,
+  cafe: cafeMesh,
+  newsstand: newsstandMesh,
+  pharmacy: pharmacyMesh,
+  tech_store: techStoreMesh,
+  bookstore: bookstoreMesh,
   restroom: restroomMesh,
   info_board: infoBoardMesh,
   turnstile: turnstileMesh,

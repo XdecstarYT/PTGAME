@@ -1011,6 +1011,9 @@ export class UIController {
       <div class="row"><span>Freight revenue (all-time)</span><b>${fmtMoney(this.economy.totalFreightRevenue)}</b></div>
       <div class="row"><span>Depots / trucks</span><b>${this.cargoSystem?.depots.size || 0} / ${this.cargoSystem?.trucks.size || 0}</b></div>
       <div class="row"><span>Shipments delivered / spoiled</span><b>${this.cargoSystem?.deliveredCount || 0} / ${this.cargoSystem?.spoiledCount || 0}</b></div>
+      <h4>Station Shops</h4>
+      <div class="row"><span>Shop revenue today</span><b style="color:#6ee7c9">${fmtMoney(this.economy.dailyShopRevenue)}</b></div>
+      <div class="row"><span>Shop revenue (all-time)</span><b>${fmtMoney(this.economy.totalShopRevenue)}</b></div>
       <h4>Network stats</h4>
       <div class="row"><span>Coverage</span><b>${Math.round(this.network.coveragePercent() * 100)}%</b></div>
       <div class="row"><span>Lost demand today</span><b>${this.economy.lostDemandToday}</b></div>

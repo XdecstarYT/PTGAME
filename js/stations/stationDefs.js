@@ -60,7 +60,17 @@ export const STATION_INTERIOR_OBJECTS = [
   { id: 'ticket_machine', name: 'Ticket Machine', icon: '🎫', category: 'amenity', color: '#5b8ac9', cost: 2500, walkable: false },
   { id: 'turnstile', name: 'Turnstile / Gate', icon: '🚧', category: 'circulation', color: '#c9a63d', cost: 1800, walkable: true },
   { id: 'info_board', name: 'Information Board', icon: 'ℹ️', category: 'amenity', color: '#4a6fa5', cost: 600, walkable: false },
-  { id: 'kiosk', name: 'Kiosk / Shop', icon: '🏪', category: 'amenity', color: '#c15fa0', cost: 8000, walkable: false },
+  // Shops: real passive-income objects, not just decoration - see
+  // stationStatEngine.js's computeStationShopRevenue(), which sums
+  // revenuePerDay across every shop cell and scales it by how busy the
+  // station actually is (an empty shop earns little; a packed one earns
+  // its full rate). revenuePerDay is a *base* rate at "on target" footfall.
+  { id: 'kiosk', name: 'Kiosk', icon: '🏪', category: 'shop', color: '#c15fa0', cost: 8000, walkable: false, revenuePerDay: 90 },
+  { id: 'cafe', name: 'Café', icon: '☕', category: 'shop', color: '#a9714a', cost: 14000, walkable: false, revenuePerDay: 150 },
+  { id: 'newsstand', name: 'Newsstand', icon: '📰', category: 'shop', color: '#c9a63d', cost: 4000, walkable: false, revenuePerDay: 70 },
+  { id: 'pharmacy', name: 'Pharmacy', icon: '💊', category: 'shop', color: '#5fae8f', cost: 16000, walkable: false, revenuePerDay: 110 },
+  { id: 'tech_store', name: 'Tech Store', icon: '📱', category: 'shop', color: '#4a6fa5', cost: 22000, walkable: false, revenuePerDay: 200 },
+  { id: 'bookstore', name: 'Bookstore', icon: '📚', category: 'shop', color: '#8a5fae', cost: 12000, walkable: false, revenuePerDay: 90 },
   { id: 'restroom', name: 'Restroom', icon: '🚻', category: 'amenity', color: '#5fb0b0', cost: 12000, walkable: false },
   { id: 'entrance', name: 'Entrance / Exit', icon: '🚪', category: 'entrance', color: '#e8e8e8', cost: 1000, walkable: true },
   { id: 'stairs', name: 'Stairs', icon: '🪜', category: 'circulation', color: '#8f8f8f', cost: 4000, walkable: true },
@@ -76,7 +86,6 @@ export const STATION_REQUIRED_PLATFORM_LENGTH_M = { bus_stop: 14, tram_stop: 32,
 
 export const STATION_LEVEL_COST_PER_CELL = 500;
 export const STATION_TIER_UPGRADE_COST_MULT = 1.15;
-export const STATION_KIOSK_REVENUE_PER_DAY = 90;
 
 export const STATION_ARCHITECTURE_STYLES = [
   {

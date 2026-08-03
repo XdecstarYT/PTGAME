@@ -3,7 +3,7 @@ import {
   stationDesignType, stationTier, stationInteriorObject, stationArchitectureStyle, stationDesignCost,
 } from './stationDefs.js';
 import { createDefaultStationDesign, addStationLevel, removeStationLevel } from './stationModel.js';
-import { computeStationStats } from './stationStatEngine.js';
+import { computeStationStats, computeStationShopRevenue } from './stationStatEngine.js';
 import { StationScene } from './stationScene.js';
 import { StationWalkController } from './stationWalk.js';
 
@@ -268,6 +268,7 @@ export class StationDesigner {
     const stats = computeStationStats(design);
     const type = stationDesignType(design.typeId);
     const cost = stationDesignCost(design);
+    const shopRevenue = computeStationShopRevenue(design, stats);
     const warningsHtml = stats.warnings.map(w => `<div class="row violation">⚠️ ${w}</div>`).join('');
 
     this.dom.stats.innerHTML = `
@@ -280,6 +281,7 @@ export class StationDesigner {
       <div class="row"><span>Entrances</span><b>${stats.entranceCount} / ${stats.minEntrances} min</b></div>
       <div class="row"><span>Longest platform</span><b>${stats.platformLength}m / ${stats.requiredPlatformLength}m needed</b></div>
       <div class="row"><span>Dwell time</span><b>${stats.dwellTimeMin} min</b></div>
+      <div class="row"><span>Shop revenue</span><b style="color:#6ee7c9">$${Math.round(shopRevenue).toLocaleString()}/day</b></div>
       ${warningsHtml}
     `;
   }
