@@ -85,8 +85,11 @@ export function buildExteriorMesh(model, chassis) {
   });
   const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
   const hubcapMat = new THREE.MeshStandardMaterial({ color: 0xc9ccd1, roughness: 0.35, metalness: 0.7 });
-  const skirtMat = new THREE.MeshStandardMaterial({ color: 0x1c1e22, roughness: 0.7, metalness: 0.2 });
-  const trimMat = new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.45, metalness: 0.4 });
+  // Roof/skirt are a second livery "zone" beyond primary/secondary - older
+  // saved designs won't have model.livery.roof/skirt yet, so fall back to
+  // the same fixed colors this used to always render with.
+  const skirtMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(model.livery.skirt ?? 0x1c1e22), roughness: 0.7, metalness: 0.2 });
+  const trimMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(model.livery.roof ?? 0x2a2d33), roughness: 0.45, metalness: 0.4 });
   const isCombustion = ['diesel', 'hybrid', 'cng'].includes(model.powertrainId);
   const features = model.features || {};
   const lightMats = [];
@@ -222,6 +225,22 @@ export function buildExteriorMesh(model, chassis) {
         const led = new THREE.Mesh(new THREE.BoxGeometry(doorWidth * 0.5, 0.05, 0.03), doorLedMat);
         led.position.set(doorX, doorRefHeight * 0.42 + 0.4 + doorRefHeight * 0.27, side * (carWidth / 2 + 0.016));
         carGroup.add(led);
+      }
+    }
+
+    // A player-uploaded logo decal, flush-mounted on both sides near
+    // mid-body - the same "just a plane with a texture" approach the
+    // freight side decals and destination sign already use.
+    if (model.livery.logoDataUrl) {
+      const logoTex = new THREE.TextureLoader().load(model.livery.logoDataUrl);
+      logoTex.colorSpace = THREE.SRGBColorSpace;
+      const logoMat = new THREE.MeshStandardMaterial({ map: logoTex, transparent: true, roughness: 0.6 });
+      const logoSize = doorRefHeight * 0.5;
+      for (const side of [1, -1]) {
+        const logo = new THREE.Mesh(new THREE.PlaneGeometry(logoSize, logoSize), logoMat);
+        logo.position.set(-carLen * 0.15, doorRefHeight * 0.42 + 0.4, side * (carWidth / 2 + 0.02));
+        logo.rotation.y = side > 0 ? Math.PI / 2 : -Math.PI / 2;
+        carGroup.add(logo);
       }
     }
 

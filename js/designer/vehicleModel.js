@@ -39,7 +39,10 @@ export function createDefaultModel(chassisId) {
     floorPlan: createDefaultFloorPlan(chassis),
     deckCount: 1,
     upperFloorPlan: null,
-    livery: { primary: '#3a6ea5', secondary: '#f4f0ff', pattern: 'stripe', operatorName: '' },
+    livery: {
+      primary: '#3a6ea5', secondary: '#f4f0ff', pattern: 'stripe', operatorName: '',
+      roof: '#2a2d33', skirt: '#1c1e22', logoDataUrl: null,
+    },
     features: defaultFeatures(),
     thumbnail: null,
     createdAt: Date.now(),

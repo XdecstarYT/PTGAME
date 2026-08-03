@@ -6,6 +6,7 @@ import { REGULATION_PRESETS, regulationById } from './regulations.js';
 import { createDefaultModel, createDefaultFloorPlan, computeStats } from './vehicleModel.js';
 import { createDefaultFreightModel, computeFreightStats } from './freightModel.js';
 import { FEATURE_DEFS, MAX_PRIORITY_SEATS } from './featureDefs.js';
+import { LIVERY_TEMPLATES, liveryTemplateById } from './liveryTemplates.js';
 import { InteriorEditor } from './interiorEditor.js';
 import { DesignerScene } from './designerScene.js';
 import { InteriorWalkController } from './interiorWalk.js';
@@ -137,7 +138,10 @@ export class VehicleDesigner {
   // plan/features/custom-dimension concepts at all, so they skip this.
   _normalizeModel() {
     if (this.model.livery.operatorName === undefined) this.model.livery.operatorName = '';
+    if (this.model.livery.logoDataUrl === undefined) this.model.livery.logoDataUrl = null;
     if (this.model.kind === 'freight') return;
+    if (this.model.livery.roof === undefined) this.model.livery.roof = '#2a2d33';
+    if (this.model.livery.skirt === undefined) this.model.livery.skirt = '#1c1e22';
     if (!this.model.features) this.model.features = {};
     for (const f of FEATURE_DEFS) if (this.model.features[f.id] === undefined) this.model.features[f.id] = false;
     if (this.model.features.prioritySeats === undefined) this.model.features.prioritySeats = 0;
@@ -273,11 +277,14 @@ export class VehicleDesigner {
   _tabLiveryFreight() {
     const chassis = this._chassis();
     this.dom.tabContent.innerHTML = `
+      <h4>Brand Templates</h4>
+      ${this._liveryTemplateRow()}
       <h4>Livery</h4>
       <div class="field"><label>Primary color</label><input type="color" id="livery-primary" value="${this.model.livery.primary}"></div>
       <div class="field"><label>Secondary / stripe color</label><input type="color" id="livery-secondary" value="${this.model.livery.secondary}"></div>
       <div class="field"><label>Operator name (shown on the side of the vehicle)</label>
         <input type="text" id="livery-operator" maxlength="24" placeholder="${chassis.manufacturer}" value="${this.model.livery.operatorName || ''}"></div>
+      ${this._logoUploadRow()}
       <h4>Consist</h4>
       <div class="field"><label>Cars: ${this.model.consistCars} (${chassis.minConsist}-${chassis.maxConsist} allowed)</label>
         <input type="range" id="consist-slider" min="${chassis.minConsist}" max="${chassis.maxConsist}" value="${this.model.consistCars}"></div>
@@ -286,6 +293,7 @@ export class VehicleDesigner {
     document.getElementById('livery-secondary').addEventListener('input', (e) => { this.model.livery.secondary = e.target.value; this.scene.setVehicle(this.model, chassis); this._renderStats(); });
     document.getElementById('livery-operator').addEventListener('input', (e) => { this.model.livery.operatorName = e.target.value; this.scene.setVehicle(this.model, chassis); });
     document.getElementById('consist-slider').addEventListener('change', (e) => { this.model.consistCars = Number(e.target.value); this.scene.setVehicle(this.model, chassis); this._tabLiveryFreight(); this._renderStats(); });
+    this._wireLiveryShared(chassis, this._tabLiveryFreight);
   }
 
   _tabRegsFreight() {
@@ -467,12 +475,74 @@ export class VehicleDesigner {
     });
   }
 
+  // ---------------- livery authoring (shared passenger + freight) ----------------
+
+  // One-click brand color schemes - see liveryTemplates.js. Shared between
+  // both livery tabs since the concept (and swatch styling, reusing the
+  // Building Creator's .material-swatch look) is identical either way.
+  _liveryTemplateRow() {
+    return `<div class="material-swatch-row">${LIVERY_TEMPLATES.map(t => `
+      <button class="material-swatch" data-template="${t.id}" title="${t.name}">
+        <span class="swatch-dot" style="background:${t.primary}"></span>${t.name}
+      </button>`).join('')}</div>`;
+  }
+
+  _logoUploadRow() {
+    const has = !!this.model.livery.logoDataUrl;
+    return `
+      <div class="field"><label>Logo decal (shown on both sides)</label>
+        <div class="piece-brush-row">
+          <label class="action secondary" style="cursor:pointer">Upload Image<input type="file" id="livery-logo" accept="image/*" class="hidden"></label>
+          ${has ? '<button class="action secondary" id="livery-logo-remove">Remove Logo</button>' : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  // Wires the template swatches + logo upload/remove controls that both
+  // livery tabs render - rerender is the tab's own render function, called
+  // to refresh the "Remove Logo" button's visibility after a change.
+  _wireLiveryShared(chassis, rerender) {
+    this.dom.tabContent.querySelectorAll('[data-template]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const t = liveryTemplateById(btn.dataset.template);
+        this.model.livery.primary = t.primary;
+        this.model.livery.secondary = t.secondary;
+        this.model.livery.pattern = t.pattern;
+        if (!this._isFreight()) { this.model.livery.roof = t.roof; this.model.livery.skirt = t.skirt; }
+        this.scene.setVehicle(this.model, chassis);
+        rerender.call(this);
+        this._renderStats();
+      });
+    });
+    this.dom.tabContent.querySelector('#livery-logo')?.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        this.model.livery.logoDataUrl = String(reader.result);
+        this.scene.setVehicle(this.model, chassis);
+        rerender.call(this);
+      };
+      reader.readAsDataURL(file);
+    });
+    this.dom.tabContent.querySelector('#livery-logo-remove')?.addEventListener('click', () => {
+      this.model.livery.logoDataUrl = null;
+      this.scene.setVehicle(this.model, chassis);
+      rerender.call(this);
+    });
+  }
+
   _tabLivery() {
     const chassis = this._chassis();
     this.dom.tabContent.innerHTML = `
+      <h4>Brand Templates</h4>
+      ${this._liveryTemplateRow()}
       <h4>Livery</h4>
-      <div class="field"><label>Primary color</label><input type="color" id="livery-primary" value="${this.model.livery.primary}"></div>
+      <div class="field"><label>Primary (body) color</label><input type="color" id="livery-primary" value="${this.model.livery.primary}"></div>
       <div class="field"><label>Secondary / stripe color</label><input type="color" id="livery-secondary" value="${this.model.livery.secondary}"></div>
+      <div class="field"><label>Roof / trim color</label><input type="color" id="livery-roof" value="${this.model.livery.roof ?? '#2a2d33'}"></div>
+      <div class="field"><label>Skirt color</label><input type="color" id="livery-skirt" value="${this.model.livery.skirt ?? '#1c1e22'}"></div>
       <div class="field"><label>Pattern</label>
         <select id="livery-pattern">
           <option value="solid" ${this.model.livery.pattern === 'solid' ? 'selected' : ''}>Solid</option>
@@ -483,6 +553,7 @@ export class VehicleDesigner {
       </div>
       <div class="field"><label>Operator name (shown on the destination board)</label>
         <input type="text" id="livery-operator" maxlength="24" placeholder="${this.model.name}" value="${this.model.livery.operatorName || ''}"></div>
+      ${this._logoUploadRow()}
       <h4>Consist</h4>
       <div class="field"><label>Cars: ${this.model.consistCars} (${chassis.minConsist}-${chassis.maxConsist} allowed)</label>
         <input type="range" id="consist-slider" min="${chassis.minConsist}" max="${chassis.maxConsist}" value="${this.model.consistCars}"></div>
@@ -494,11 +565,14 @@ export class VehicleDesigner {
     `;
     document.getElementById('livery-primary').addEventListener('input', (e) => { this.model.livery.primary = e.target.value; this.scene.setVehicle(this.model, chassis); this._renderStats(); });
     document.getElementById('livery-secondary').addEventListener('input', (e) => { this.model.livery.secondary = e.target.value; this.scene.setVehicle(this.model, chassis); this._renderStats(); });
+    document.getElementById('livery-roof').addEventListener('input', (e) => { this.model.livery.roof = e.target.value; this.scene.setVehicle(this.model, chassis); });
+    document.getElementById('livery-skirt').addEventListener('input', (e) => { this.model.livery.skirt = e.target.value; this.scene.setVehicle(this.model, chassis); });
     document.getElementById('livery-pattern').addEventListener('change', (e) => { this.model.livery.pattern = e.target.value; this.scene.setVehicle(this.model, chassis); this._renderStats(); });
     document.getElementById('livery-operator').addEventListener('input', (e) => { this.model.livery.operatorName = e.target.value; this.scene.setVehicle(this.model, chassis); });
     document.getElementById('consist-slider').addEventListener('change', (e) => { this.model.consistCars = Number(e.target.value); this.scene.setVehicle(this.model, chassis); this._tabLivery(); this._renderStats(); });
     document.getElementById('aisle-slider').addEventListener('input', (e) => { this.model.aisleWidthCm = Number(e.target.value); this._renderStats(); });
     document.getElementById('step-slider').addEventListener('input', (e) => { this.model.stepHeightCm = Number(e.target.value); this._renderStats(); });
+    this._wireLiveryShared(chassis, this._tabLivery);
   }
 
   _tabFeatures() {

@@ -16,7 +16,7 @@ export function createDefaultFreightModel(chassisId) {
     chassisId,
     powertrainId: powertrain.id,
     consistCars: 1,
-    livery: { primary: '#5a6b52', secondary: '#e8dfc8', pattern: 'solid', operatorName: '' },
+    livery: { primary: '#5a6b52', secondary: '#e8dfc8', pattern: 'solid', operatorName: '', logoDataUrl: null },
     thumbnail: null,
     createdAt: Date.now(),
   };

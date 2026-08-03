@@ -54,6 +54,22 @@ function addSideDecals(group, text, len, bodyH, width, yFrac = 0.55) {
   }
 }
 
+// A player-uploaded logo, mounted below the operator name decal.
+function addLogoDecal(group, dataUrl, bodyH, width, yFrac = 0.3) {
+  const tex = new THREE.TextureLoader().load(dataUrl);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const size = bodyH * 0.4;
+  for (const side of [1, -1]) {
+    const decal = new THREE.Mesh(
+      new THREE.PlaneGeometry(size, size),
+      new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 0.6 }),
+    );
+    decal.position.set(0, bodyH * yFrac, side * (width / 2 + 0.02));
+    decal.rotation.y = side > 0 ? Math.PI / 2 : -Math.PI / 2;
+    group.add(decal);
+  }
+}
+
 function addWheels(group, len, width, wheelR, hubMat, wheelMat) {
   const wheelCount = Math.max(2, Math.round(len / 2.5));
   for (let i = 0; i < wheelCount; i++) {
@@ -169,6 +185,7 @@ export function buildFreightExteriorMesh(model, chassis) {
       doorLine.position.set(bodyX, bodyH * 0.5 + 0.5, width / 2 + 0.01);
       group.add(doorLine);
       addSideDecals(group, operatorLabel, bodyLen, bodyH, width);
+      if (model.livery.logoDataUrl) addLogoDecal(group, model.livery.logoDataUrl, bodyH, width, 0.25);
     }
   } else {
     // Freight rail: a boxcar (enclosed body + roof ridge + sliding-door
@@ -199,6 +216,7 @@ export function buildFreightExteriorMesh(model, chassis) {
         group.add(door);
       }
       addSideDecals(group, operatorLabel, len, bodyH, width, 0.72);
+      if (model.livery.logoDataUrl) addLogoDecal(group, model.livery.logoDataUrl, bodyH, width, 0.4);
     }
     for (const capX of [-len / 2 - 0.15, len / 2 + 0.15]) {
       const coupler = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.2), new THREE.MeshStandardMaterial({ color: 0x1c1c1e, roughness: 0.6, metalness: 0.4 }));
