@@ -81,19 +81,34 @@ export class AudioSystem {
     this.rainGain.gain.setTargetAtTime(isRaining ? 0.05 : 0, this.ctx.currentTime, 3);
   }
 
-  playArrivalChime() {
+  // hornStyle (model.hornStyle - see vehicleStyleDefs.js) is a pure audio
+  // flavor choice, not a stat - 'standard' reproduces the exact chime this
+  // always played, so old saved designs (with no hornStyle field) sound
+  // unchanged.
+  playArrivalChime(hornStyle = 'standard') {
     if (!this.ctx || this.muted) return;
     const now = this.ctx.currentTime;
     if (now - this._lastChimeAt < 0.3) return; // throttle so a busy city isn't a wall of dings
     this._lastChimeAt = now;
-    this._blip(880, now, 0.09, 0.045);
-    this._blip(1320, now + 0.1, 0.09, 0.035);
+    if (hornStyle === 'two_tone') {
+      this._blip(440, now, 0.12, 0.05, 'square');
+      this._blip(330, now + 0.13, 0.14, 0.05, 'square');
+    } else if (hornStyle === 'air_horn') {
+      this._blip(180, now, 0.35, 0.06, 'sawtooth');
+    } else if (hornStyle === 'electronic_chime') {
+      this._blip(660, now, 0.08, 0.035);
+      this._blip(880, now + 0.09, 0.08, 0.035);
+      this._blip(1100, now + 0.18, 0.1, 0.035);
+    } else {
+      this._blip(880, now, 0.09, 0.045);
+      this._blip(1320, now + 0.1, 0.09, 0.035);
+    }
   }
 
-  _blip(freq, when, duration, gainAmt) {
+  _blip(freq, when, duration, gainAmt, type = 'sine') {
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
-    osc.type = 'sine';
+    osc.type = type;
     osc.frequency.value = freq;
     gain.gain.setValueAtTime(0, when);
     gain.gain.linearRampToValueAtTime(gainAmt, when + 0.01);

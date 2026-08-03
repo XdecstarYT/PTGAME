@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { wheelStyleById, headlightStyleById, roofAccessoryById, windowTintById } from './vehicleStyleDefs.js';
 
 // Cross-section with rounded roof corners (flat floor, flat sides, rounded
 // where the roof meets the walls) - extruded along the car's length for a
@@ -57,6 +58,28 @@ function destinationSign(text, w, h) {
   return group;
 }
 
+// A small fleet/unit-number decal - the same canvas-texture-to-plane trick
+// as destinationSign(), just a compact white plate mounted near the front
+// corner instead of a roof-mounted board. Distinct from operatorName (which
+// is the whole line's brand), this is the individual vehicle's unit number.
+function fleetNumberPlate(text) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 160; canvas.height = 80;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#f2f2f2';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#0c0d10';
+  ctx.font = 'bold 44px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(text).slice(0, 6).toUpperCase(), canvas.width / 2, canvas.height / 2);
+  const tex = new THREE.CanvasTexture(canvas);
+  return new THREE.Mesh(
+    new THREE.PlaneGeometry(0.32, 0.16),
+    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 }),
+  );
+}
+
 // Procedural exterior mesh shared between the designer's 3D preview and the
 // actual in-sim vehicles, so what you design is what rolls down the street.
 export function buildExteriorMesh(model, chassis) {
@@ -79,12 +102,16 @@ export function buildExteriorMesh(model, chassis) {
   // Real translucent glazing instead of a flat opaque dark panel - windows,
   // windshield and mirrors all share this so the whole glass "family" reads
   // consistently, the same treatment the station builder's shells use.
+  // Tint (model.livery.windowTint) swaps color/opacity - clear is the same
+  // values this always used to render with.
+  const windowTint = windowTintById(model.livery.windowTint);
   const windowMat = new THREE.MeshPhysicalMaterial({
-    color: 0x1a2230, transparent: true, opacity: 0.72, roughness: 0.12, metalness: 0.2,
+    color: windowTint.color, transparent: true, opacity: windowTint.opacity, roughness: 0.12, metalness: 0.2,
     clearcoat: 0.6, clearcoatRoughness: 0.2,
   });
   const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
-  const hubcapMat = new THREE.MeshStandardMaterial({ color: 0xc9ccd1, roughness: 0.35, metalness: 0.7 });
+  const wheelStyle = wheelStyleById((model.exterior || {}).wheelStyle);
+  const hubcapMat = new THREE.MeshStandardMaterial({ color: wheelStyle.hubColor, roughness: wheelStyle.hubRoughness, metalness: wheelStyle.hubMetalness });
   // Roof/skirt are a second livery "zone" beyond primary/secondary - older
   // saved designs won't have model.livery.roof/skirt yet, so fall back to
   // the same fixed colors this used to always render with.
@@ -92,6 +119,8 @@ export function buildExteriorMesh(model, chassis) {
   const trimMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(model.livery.roof ?? 0x2a2d33), roughness: 0.45, metalness: 0.4 });
   const isCombustion = ['diesel', 'hybrid', 'cng'].includes(model.powertrainId);
   const features = model.features || {};
+  const headlightStyle = headlightStyleById((model.exterior || {}).headlightStyle);
+  const roofAccessory = roofAccessoryById((model.exterior || {}).roofAccessory);
   const lightMats = [];
 
   for (let i = 0; i < model.consistCars; i++) {
@@ -183,7 +212,9 @@ export function buildExteriorMesh(model, chassis) {
         hub.position.set(wx, wheelR, wz > 0 ? wz + 0.02 : wz - 0.02);
         carGroup.add(hub);
 
-        // A handful of lug-nut bolts around the hub for close-up detail.
+        // A handful of lug-nut bolts around the hub for close-up detail -
+        // skipped for the Covered Hubs style, which reads as a smooth disc.
+        if (wheelStyle.id === 'covered') continue;
         for (let b = 0; b < 5; b++) {
           const ang = (b / 5) * Math.PI * 2;
           const bolt = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 5), wheelMat);
@@ -310,6 +341,15 @@ export function buildExteriorMesh(model, chassis) {
       const sign = destinationSign(model.livery.operatorName || model.name, carWidth * 0.62, carHeight * 0.15);
       sign.position.set(carLen / 2 - carHeight * 0.32, carHeight + 0.4 + carHeight * 0.09, 0);
       carGroup.add(sign);
+
+      if (model.livery.fleetNumber) {
+        for (const side of [1, -1]) {
+          const plate = fleetNumberPlate(model.livery.fleetNumber);
+          plate.position.set(carLen / 2 - carLen * 0.12, 0.75, side * (carWidth / 2 + 0.02));
+          plate.rotation.y = side > 0 ? Math.PI / 2 : -Math.PI / 2;
+          carGroup.add(plate);
+        }
+      }
     }
 
     // Roof equipment, now tied to the Features tab rather than being
@@ -346,25 +386,61 @@ export function buildExteriorMesh(model, chassis) {
     if (i === 0 && chassis.category === 'tram' && model.powertrainId === 'electric') {
       const pantoMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.5, metalness: 0.4 });
       const baseY = carHeight + 0.4;
-      const frameBack = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.5, 0.06), pantoMat);
-      frameBack.position.set(-carLen * 0.15, baseY + 0.25, 0);
-      carGroup.add(frameBack);
-      const frameFront = frameBack.clone();
-      frameFront.position.x = carLen * 0.1;
-      carGroup.add(frameFront);
-      const diamond = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.45, 6), pantoMat);
-      diamond.rotation.z = Math.PI / 2;
-      diamond.position.set(-carLen * 0.025, baseY + 0.5, 0);
-      carGroup.add(diamond);
-      const contactBar = new THREE.Mesh(new THREE.BoxGeometry(carLen * 0.22, 0.03, 0.5), pantoMat);
-      contactBar.position.set(-carLen * 0.025, baseY + 0.52, 0);
-      carGroup.add(contactBar);
+      if (roofAccessory.id === 'scissor_pantograph') {
+        // A crossed X-frame lattice instead of the default single diamond arm.
+        for (const sign of [1, -1]) {
+          const arm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.55, 0.05), pantoMat);
+          arm.position.set(sign * carLen * 0.06, baseY + 0.28, 0);
+          arm.rotation.z = sign * 0.5;
+          carGroup.add(arm);
+        }
+        const contactBar = new THREE.Mesh(new THREE.BoxGeometry(carLen * 0.24, 0.03, 0.5), pantoMat);
+        contactBar.position.set(0, baseY + 0.52, 0);
+        carGroup.add(contactBar);
+      } else {
+        const frameBack = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.5, 0.06), pantoMat);
+        frameBack.position.set(-carLen * 0.15, baseY + 0.25, 0);
+        carGroup.add(frameBack);
+        const frameFront = frameBack.clone();
+        frameFront.position.x = carLen * 0.1;
+        carGroup.add(frameFront);
+        const diamond = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.45, 6), pantoMat);
+        diamond.rotation.z = Math.PI / 2;
+        diamond.position.set(-carLen * 0.025, baseY + 0.5, 0);
+        carGroup.add(diamond);
+        const contactBar = new THREE.Mesh(new THREE.BoxGeometry(carLen * 0.22, 0.03, 0.5), pantoMat);
+        contactBar.position.set(-carLen * 0.025, baseY + 0.52, 0);
+        carGroup.add(contactBar);
+      }
+    }
+    if (chassis.category === 'bus' && roofAccessory.id === 'roof_rack') {
+      const rackMat = new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.5, metalness: 0.5 });
+      const railHeight = 0.1;
+      for (const side of [1, -1]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(carLen * 0.7, 0.03, 0.03), rackMat);
+        rail.position.set(0, carHeight + 0.4 + railHeight, side * carWidth * 0.32);
+        carGroup.add(rail);
+      }
+      for (const x of [-carLen * 0.3, -carLen * 0.1, carLen * 0.1, carLen * 0.3]) {
+        const strut = new THREE.Mesh(new THREE.BoxGeometry(0.03, railHeight, carWidth * 0.64), rackMat);
+        strut.position.set(x, carHeight + 0.4 + railHeight / 2, 0);
+        carGroup.add(strut);
+      }
     }
 
     if (i === 0) {
+      // Headlight style (model.exterior.headlightStyle) swaps the lens
+      // geometry only - material/emissive setup (and setLights()'s on/off
+      // toggling by 'headlight' kind) stays identical either way.
+      const headlightGeo = headlightStyle.id === 'led_strip'
+        ? new THREE.BoxGeometry(0.05, 0.06, 0.32)
+        : headlightStyle.id === 'projector'
+          ? new THREE.CylinderGeometry(0.11, 0.13, 0.14, 12)
+          : new THREE.SphereGeometry(0.18, 8, 8);
+      if (headlightStyle.id === 'projector') headlightGeo.rotateZ(Math.PI / 2);
       for (const wz of [-carWidth * 0.28, carWidth * 0.28]) {
         const light = new THREE.Mesh(
-          new THREE.SphereGeometry(0.18, 8, 8),
+          headlightGeo.clone(),
           new THREE.MeshStandardMaterial({ color: 0xfff6d0, emissive: 0xfff6d0, emissiveIntensity: 0 })
         );
         light.position.set(carLen / 2 - 0.1, carHeight * 0.4 + 0.4, wz);

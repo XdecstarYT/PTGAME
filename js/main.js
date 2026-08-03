@@ -159,8 +159,8 @@ audioBtn.addEventListener('click', () => {
   if (on) audioSystem.setRaining(economy.isRaining); // sync immediately instead of waiting for the next day tick
 });
 vehicleSystem.on('arrive', ({ vehicle }) => {
-  audioSystem.playArrivalChime();
   const model = catalog.get(vehicle.modelId);
+  audioSystem.playArrivalChime(model?.hornStyle);
   if (model) audioSystem.playDeparture(model.powertrainId);
 });
 

@@ -7,6 +7,9 @@ import { createDefaultModel, createDefaultFloorPlan, computeStats } from './vehi
 import { createDefaultFreightModel, computeFreightStats } from './freightModel.js';
 import { FEATURE_DEFS, MAX_PRIORITY_SEATS } from './featureDefs.js';
 import { LIVERY_TEMPLATES, liveryTemplateById } from './liveryTemplates.js';
+import {
+  WHEEL_STYLES, HEADLIGHT_STYLES, ROOF_ACCESSORIES, WINDOW_TINTS, SEAT_MATERIALS, HORN_STYLES,
+} from './vehicleStyleDefs.js';
 import { InteriorEditor } from './interiorEditor.js';
 import { DesignerScene } from './designerScene.js';
 import { InteriorWalkController } from './interiorWalk.js';
@@ -151,6 +154,11 @@ export class VehicleDesigner {
     if (this.model.customDoorCount === undefined) this.model.customDoorCount = base.doorZones.length;
     if (this.model.deckCount === undefined) this.model.deckCount = 1;
     if (this.model.upperFloorPlan === undefined) this.model.upperFloorPlan = null;
+    if (this.model.livery.windowTint === undefined) this.model.livery.windowTint = 'clear';
+    if (this.model.livery.fleetNumber === undefined) this.model.livery.fleetNumber = '';
+    if (!this.model.exterior) this.model.exterior = { wheelStyle: 'steel', headlightStyle: 'round', roofAccessory: 'none' };
+    if (!this.model.interiorStyle) this.model.interiorStyle = { seatMaterial: 'fabric', seatColor: '#2f6690' };
+    if (this.model.hornStyle === undefined) this.model.hornStyle = 'standard';
   }
 
   switchTab(tab) {
@@ -357,6 +365,22 @@ export class VehicleDesigner {
         </div>
         <p class="designer-hint">A double-decker needs a staircase cell on each deck (paint one in the Interior tab) to connect the two levels.</p>
       ` : ''}
+      <h4>Wheels</h4>
+      <div class="chassis-card-row">${WHEEL_STYLES.map(w => `
+        <button class="action ${this.model.exterior.wheelStyle === w.id ? '' : 'secondary'}" data-wheel-style="${w.id}">
+          ${w.label}<br><small>${w.costPerCar ? fmtMoney(w.costPerCar) + '/car' : 'included'}</small>
+        </button>`).join('')}</div>
+      <h4>Headlights</h4>
+      <div class="chassis-card-row">${HEADLIGHT_STYLES.map(h => `
+        <button class="action ${this.model.exterior.headlightStyle === h.id ? '' : 'secondary'}" data-headlight-style="${h.id}">
+          ${h.label}<br><small>${h.costPerCar ? fmtMoney(h.costPerCar) + '/car' : 'included'}</small>
+        </button>`).join('')}</div>
+      <h4>Roof Accessory</h4>
+      <div class="chassis-card-row">${ROOF_ACCESSORIES.map(r => `
+        <button class="action ${this.model.exterior.roofAccessory === r.id ? '' : 'secondary'}" data-roof-accessory="${r.id}">
+          ${r.label}<br><small>${r.costPerCar ? fmtMoney(r.costPerCar) + '/car' : 'included'}</small>
+        </button>`).join('')}</div>
+      <p class="designer-hint">Roof Luggage Rack only shows up on bus chassis; Scissor Pantograph only replaces the default single-arm pantograph on electric trams/subways - picking one that doesn't apply to this chassis just has no visual effect.</p>
     `;
 
     this.dom.tabContent.querySelectorAll('[data-chassis]').forEach(btn => {
@@ -415,6 +439,30 @@ export class VehicleDesigner {
         this._refreshAll();
       });
     });
+    this.dom.tabContent.querySelectorAll('[data-wheel-style]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.model.exterior.wheelStyle = btn.dataset.wheelStyle;
+        this.scene.setVehicle(this.model, this._chassis());
+        this._tabChassis();
+        this._renderStats();
+      });
+    });
+    this.dom.tabContent.querySelectorAll('[data-headlight-style]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.model.exterior.headlightStyle = btn.dataset.headlightStyle;
+        this.scene.setVehicle(this.model, this._chassis());
+        this._tabChassis();
+        this._renderStats();
+      });
+    });
+    this.dom.tabContent.querySelectorAll('[data-roof-accessory]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.model.exterior.roofAccessory = btn.dataset.roofAccessory;
+        this.scene.setVehicle(this.model, this._chassis());
+        this._tabChassis();
+        this._renderStats();
+      });
+    });
   }
 
   // Length/width/door-count changes resize the floor plan grid itself, so
@@ -451,6 +499,12 @@ export class VehicleDesigner {
       <div id="if-mount"></div>
       <div id="if-warning" class="if-warning hidden"></div>
       <p class="designer-hint">Click, or click-drag, to paint. The row of doors above the grid toggles which candidate door zones this chassis actually uses.</p>
+      <h4>Seat Trim</h4>
+      <div class="chassis-card-row">${SEAT_MATERIALS.map(s => `
+        <button class="action ${this.model.interiorStyle.seatMaterial === s.id ? '' : 'secondary'}" data-seat-material="${s.id}">
+          ${s.label}<br><small>${s.costPerCar ? fmtMoney(s.costPerCar) + '/car' : 'included'}</small>
+        </button>`).join('')}</div>
+      <div class="field"><label>Seat color</label><input type="color" id="seat-color" value="${this.model.interiorStyle.seatColor}"></div>
     `;
     const mount = document.getElementById('if-mount');
     if (!this.interiorEditor) {
@@ -459,6 +513,17 @@ export class VehicleDesigner {
       this.interiorEditor.container = mount;
     }
     this.interiorEditor.setModel(this.model, this._chassis(), this.activeDeck);
+
+    this.dom.tabContent.querySelectorAll('[data-seat-material]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.model.interiorStyle.seatMaterial = btn.dataset.seatMaterial;
+        this._tabInterior();
+        this._renderStats();
+      });
+    });
+    document.getElementById('seat-color').addEventListener('input', (e) => {
+      this.model.interiorStyle.seatColor = e.target.value;
+    });
 
     this.dom.tabContent.querySelectorAll('.if-brush').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -553,7 +618,14 @@ export class VehicleDesigner {
       </div>
       <div class="field"><label>Operator name (shown on the destination board)</label>
         <input type="text" id="livery-operator" maxlength="24" placeholder="${this.model.name}" value="${this.model.livery.operatorName || ''}"></div>
+      <div class="field"><label>Fleet / unit number (shown on a small side plate)</label>
+        <input type="text" id="livery-fleet-number" maxlength="6" placeholder="e.g. 101" value="${this.model.livery.fleetNumber || ''}"></div>
       ${this._logoUploadRow()}
+      <h4>Window Tint</h4>
+      <div class="chassis-card-row">${WINDOW_TINTS.map(t => `
+        <button class="action ${this.model.livery.windowTint === t.id ? '' : 'secondary'}" data-window-tint="${t.id}">
+          ${t.label}<br><small>${t.costPerCar ? fmtMoney(t.costPerCar) + '/car' : 'included'}</small>
+        </button>`).join('')}</div>
       <h4>Consist</h4>
       <div class="field"><label>Cars: ${this.model.consistCars} (${chassis.minConsist}-${chassis.maxConsist} allowed)</label>
         <input type="range" id="consist-slider" min="${chassis.minConsist}" max="${chassis.maxConsist}" value="${this.model.consistCars}"></div>
@@ -569,6 +641,15 @@ export class VehicleDesigner {
     document.getElementById('livery-skirt').addEventListener('input', (e) => { this.model.livery.skirt = e.target.value; this.scene.setVehicle(this.model, chassis); });
     document.getElementById('livery-pattern').addEventListener('change', (e) => { this.model.livery.pattern = e.target.value; this.scene.setVehicle(this.model, chassis); this._renderStats(); });
     document.getElementById('livery-operator').addEventListener('input', (e) => { this.model.livery.operatorName = e.target.value; this.scene.setVehicle(this.model, chassis); });
+    document.getElementById('livery-fleet-number').addEventListener('input', (e) => { this.model.livery.fleetNumber = e.target.value; this.scene.setVehicle(this.model, chassis); });
+    this.dom.tabContent.querySelectorAll('[data-window-tint]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.model.livery.windowTint = btn.dataset.windowTint;
+        this.scene.setVehicle(this.model, chassis);
+        this._tabLivery();
+        this._renderStats();
+      });
+    });
     document.getElementById('consist-slider').addEventListener('change', (e) => { this.model.consistCars = Number(e.target.value); this.scene.setVehicle(this.model, chassis); this._tabLivery(); this._renderStats(); });
     document.getElementById('aisle-slider').addEventListener('input', (e) => { this.model.aisleWidthCm = Number(e.target.value); this._renderStats(); });
     document.getElementById('step-slider').addEventListener('input', (e) => { this.model.stepHeightCm = Number(e.target.value); this._renderStats(); });
@@ -586,6 +667,10 @@ export class VehicleDesigner {
       </button>`;
     }).join('');
 
+    const hornButtons = HORN_STYLES.map(h => `
+      <button class="action ${this.model.hornStyle === h.id ? '' : 'secondary'}" data-horn-style="${h.id}">${h.label}</button>
+    `).join('');
+
     this.dom.tabContent.innerHTML = `
       <h4>Onboard amenities</h4>
       <div class="chassis-card-row">${featureButtons}</div>
@@ -593,7 +678,16 @@ export class VehicleDesigner {
       <div class="field"><label>Reserved seats: ${this.model.features.prioritySeats || 0} (of ${seatCount} seats)</label>
         <input type="range" id="priority-slider" min="0" max="${maxPriority}" value="${Math.min(this.model.features.prioritySeats || 0, maxPriority)}"></div>
       <p class="designer-hint">Amenities add to purchase price and daily running cost but boost comfort (and a little reliability for CCTV). Priority seats are a designation on existing seats, not new equipment - free, but capped by how many seats you've actually painted.</p>
+      <h4>Arrival Horn / Chime</h4>
+      <div class="chassis-card-row">${hornButtons}</div>
+      <p class="designer-hint">Purely an audio cue - no effect on stats. Plays when this vehicle arrives at a station in-sim.</p>
     `;
+    this.dom.tabContent.querySelectorAll('[data-horn-style]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.model.hornStyle = btn.dataset.hornStyle;
+        this._tabFeatures();
+      });
+    });
     this.dom.tabContent.querySelectorAll('[data-feature]').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.feature;

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { seatMaterialById } from './vehicleStyleDefs.js';
 
 // First-person walkable inspection mode for the vehicle designer's own
 // floor plan - the interior equivalent of the station builder's WalkController
@@ -183,9 +184,18 @@ export class InteriorWalkController {
         group.add(decal);
 
         if (id === 'seat') {
+          // Reflects the Interior tab's seat material/color choice
+          // (model.interiorStyle) - roughness varies by material (fabric vs
+          // leather etc, see vehicleStyleDefs.js), defaulting to the same
+          // values this always rendered with for designs saved before that
+          // field existed.
+          const style = this.model.interiorStyle || {};
+          const seatMat = seatMaterialById(style.seatMaterial);
           const seat = new THREE.Mesh(
             new THREE.BoxGeometry(cellW * 0.8, 0.45, cellD * 0.8),
-            new THREE.MeshStandardMaterial({ color: 0x2f6690, roughness: 0.7 }),
+            new THREE.MeshStandardMaterial({
+              color: style.seatColor ?? 0x2f6690, roughness: seatMat.roughness, metalness: seatMat.metalness,
+            }),
           );
           seat.position.set(x, y + 0.225, z);
           seat.castShadow = true;

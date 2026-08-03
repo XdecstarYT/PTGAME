@@ -2,6 +2,7 @@ import { chassisById, effectiveChassis } from './chassisDefs.js';
 import { powertrainById, powertrainsForCategory } from './powertrainDefs.js';
 import { checkCompliance, regulationById } from './regulations.js';
 import { FEATURE_DEFS, defaultFeatures, MAX_PRIORITY_SEATS, PRIORITY_SEAT_COMFORT_BONUS_EACH } from './featureDefs.js';
+import { wheelStyleById, headlightStyleById, roofAccessoryById, windowTintById, seatMaterialById } from './vehicleStyleDefs.js';
 
 // A VehicleModel is a plain, JSON-serializable data object (so it can be
 // saved to localStorage / exported as-is) - all derived numbers are computed
@@ -42,8 +43,12 @@ export function createDefaultModel(chassisId) {
     livery: {
       primary: '#3a6ea5', secondary: '#f4f0ff', pattern: 'stripe', operatorName: '',
       roof: '#2a2d33', skirt: '#1c1e22', logoDataUrl: null,
+      windowTint: 'clear', fleetNumber: '',
     },
     features: defaultFeatures(),
+    exterior: { wheelStyle: 'steel', headlightStyle: 'round', roofAccessory: 'none' },
+    interiorStyle: { seatMaterial: 'fabric', seatColor: '#2f6690' },
+    hornStyle: 'standard',
     thumbnail: null,
     createdAt: Date.now(),
   };
@@ -115,22 +120,38 @@ export function computeStats(model, opts = {}) {
   const prioritySeats = Math.min(MAX_PRIORITY_SEATS, seatCount, features.prioritySeats || 0);
   const priorityComfortBonus = prioritySeats * PRIORITY_SEAT_COMFORT_BONUS_EACH;
 
-  const purchaseCost = Math.round((chassis.baseCostPerCar * powertrain.costMult * deckCostMult + interiorFitoutPerCar + featureCostPerCar) * model.consistCars + 2000);
+  // Exterior/interior style choices (vehicleStyleDefs.js) - wheel/headlight/
+  // roof-accessory/window-tint/seat-material - are real trade-offs like
+  // Features, just grouped under their own tabs instead of a single toggle
+  // list. Optional-chained/defaulted so designs saved before these fields
+  // existed still compute cleanly.
+  const exterior = model.exterior || {};
+  const wheelStyle = wheelStyleById(exterior.wheelStyle);
+  const headlightStyle = headlightStyleById(exterior.headlightStyle);
+  const roofAccessory = roofAccessoryById(exterior.roofAccessory);
+  const windowTint = windowTintById(model.livery.windowTint);
+  const seatMaterial = seatMaterialById((model.interiorStyle || {}).seatMaterial);
+  const styleCostPerCar = wheelStyle.costPerCar + headlightStyle.costPerCar + roofAccessory.costPerCar + windowTint.costPerCar + seatMaterial.costPerCar;
+  const styleComfortBonus = wheelStyle.comfortBonus + headlightStyle.comfortBonus + roofAccessory.comfortBonus + windowTint.comfortBonus + seatMaterial.comfortBonus;
+  const styleReliabilityBonus = wheelStyle.reliabilityBonus + roofAccessory.reliabilityBonus + seatMaterial.reliabilityBonus;
+  const styleSpeedMult = 1 + wheelStyle.speedBonusPct / 100;
+
+  const purchaseCost = Math.round((chassis.baseCostPerCar * powertrain.costMult * deckCostMult + interiorFitoutPerCar + featureCostPerCar + styleCostPerCar) * model.consistCars + 2000);
   const runningCostPerDay = Math.round((chassis.baseRunningCostPerCar * powertrain.runningCostMult * deckCostMult + featureRunningCostPerCar) * model.consistCars);
 
   const consistSpeedPenalty = 1 - Math.min(0.25, 0.015 * (model.consistCars - 1));
   const deckSpeedPenalty = isDoubleDecker ? 0.94 : 1;
-  const topSpeed = Math.round(chassis.baseSpeed * powertrain.speedMult * consistSpeedPenalty * deckSpeedPenalty * 10) / 10;
+  const topSpeed = Math.round(chassis.baseSpeed * powertrain.speedMult * consistSpeedPenalty * deckSpeedPenalty * styleSpeedMult * 10) / 10;
 
   const standingRatio = capacityTotalPerCar > 0 ? capacityStandingPerCar / capacityTotalPerCar : 0;
   const aisleSpan = Math.max(1, chassis.maxAisleWidthCm - chassis.minAisleWidthCm);
   const aisleBonus = (model.aisleWidthCm - chassis.minAisleWidthCm) / aisleSpan;
   const luggageBonus = Math.min(6, luggageCells * 1.2);
   const comfortScore = Math.round(Math.max(0, Math.min(100,
-    78 - standingRatio * 35 + aisleBonus * 20 + featureComfortBonus + priorityComfortBonus + luggageBonus)));
+    78 - standingRatio * 35 + aisleBonus * 20 + featureComfortBonus + priorityComfortBonus + luggageBonus + styleComfortBonus)));
 
   const boardingSpeedScore = Math.round(Math.max(0, Math.min(100, 40 + doorCount * 13)));
-  const reliabilityBase = Math.round(Math.max(10, Math.min(100, 92 + powertrain.reliabilityMod + featureReliabilityBonus)));
+  const reliabilityBase = Math.round(Math.max(10, Math.min(100, 92 + powertrain.reliabilityMod + featureReliabilityBonus + styleReliabilityBonus)));
   const emissionsScore = Math.round(powertrain.emissions * model.consistCars * 10) / 10;
 
   // an ad wrap sells the exterior as ad space instead of just a paint job
