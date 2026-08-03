@@ -6,6 +6,7 @@ import { createDefaultModel, createDefaultFloorPlan, computeStats } from './vehi
 import { FEATURE_DEFS, MAX_PRIORITY_SEATS } from './featureDefs.js';
 import { InteriorEditor } from './interiorEditor.js';
 import { DesignerScene } from './designerScene.js';
+import { InteriorWalkController } from './interiorWalk.js';
 
 function fmtMoney(n) {
   const sign = n < 0 ? '-' : '';
@@ -32,9 +33,16 @@ export class VehicleDesigner {
       showroomBtn: document.getElementById('designer-showroom-btn'),
       newBtn: document.getElementById('designer-new-btn'),
       saveBtn: document.getElementById('designer-save-btn'),
+      walkBtn: document.getElementById('designer-walk-btn'),
+      walkHud: document.getElementById('designer-walk-hud'),
+      walkExitBtn: document.getElementById('designer-walk-exit'),
     };
 
     this.scene = new DesignerScene(this.dom.canvas);
+    this.interiorWalk = new InteriorWalkController({
+      scene: this.scene,
+      onExit: () => this.dom.walkHud.classList.add('hidden'),
+    });
     this.activeTab = 'chassis';
     this.model = null;
     this.activeDeck = 0;
@@ -58,6 +66,11 @@ export class VehicleDesigner {
         for (const b of this.dom.envButtons) b.classList.toggle('active', b === btn);
       });
     }
+    this.dom.walkBtn.addEventListener('click', () => {
+      this.interiorWalk.enter(this.model, this._chassis());
+      this.dom.walkHud.classList.remove('hidden');
+    });
+    this.dom.walkExitBtn.addEventListener('click', () => this.interiorWalk.exit());
   }
 
   open(chassisId) {
@@ -68,9 +81,14 @@ export class VehicleDesigner {
     this.scene._resizeToContainer();
   }
 
-  close() { this.isOpen = false; this.dom.layer.classList.add('hidden'); }
+  close() {
+    this.isOpen = false;
+    this.dom.layer.classList.add('hidden');
+    if (this.interiorWalk.active) this.interiorWalk.exit();
+  }
 
   newDesign(chassisId) {
+    if (this.interiorWalk.active) this.interiorWalk.exit();
     const firstUnlockedCategory = ['bus', 'tram', 'subway'].find(c => VEHICLE_TYPES[c].unlocked) || 'bus';
     const chassis = chassisId ? chassisById(chassisId) : chassisForCategory(firstUnlockedCategory)[0];
     this.model = createDefaultModel(chassis.id);
@@ -80,6 +98,7 @@ export class VehicleDesigner {
   }
 
   loadForEdit(modelId) {
+    if (this.interiorWalk.active) this.interiorWalk.exit();
     const src = this.catalog.get(modelId);
     if (!src) return;
     this.model = JSON.parse(JSON.stringify(src));
@@ -135,7 +154,11 @@ export class VehicleDesigner {
     this._renderStats();
   }
 
-  render(dtSeconds) { if (this.isOpen) this.scene.render(dtSeconds); }
+  render(dtSeconds) {
+    if (!this.isOpen) return;
+    if (this.interiorWalk.active) this.interiorWalk.update(dtSeconds);
+    this.scene.render(dtSeconds);
+  }
 
   // ---------------- tabs ----------------
 
@@ -191,6 +214,7 @@ export class VehicleDesigner {
     this.dom.tabContent.querySelectorAll('[data-chassis]').forEach(btn => {
       btn.addEventListener('click', () => {
         if (btn.disabled) return;
+        if (this.interiorWalk.active) this.interiorWalk.exit();
         const newChassis = chassisById(btn.dataset.chassis);
         const sameCategory = newChassis.category === this._chassis().category;
         this.model.chassisId = newChassis.id;
@@ -236,6 +260,7 @@ export class VehicleDesigner {
       btn.addEventListener('click', () => {
         const decks = Number(btn.dataset.decks);
         if (decks === this.model.deckCount) return;
+        if (this.interiorWalk.active) this.interiorWalk.exit();
         this.model.deckCount = decks;
         this.model.upperFloorPlan = decks === 2 ? createDefaultFloorPlan(this._chassis()) : null;
         this.activeDeck = 0;
@@ -247,7 +272,10 @@ export class VehicleDesigner {
   // Length/width/door-count changes resize the floor plan grid itself, so
   // any previously-painted seats/aisles can't carry over meaningfully - the
   // same "start fresh" tradeoff switching chassis entirely already has.
+  // Also exits walk mode if active - it caches the chassis dimensions it
+  // entered with, which a resize would otherwise silently invalidate.
   _regenerateFloorPlanForCustomSize() {
+    if (this.interiorWalk.active) this.interiorWalk.exit();
     const eff = this._chassis();
     this.model.floorPlan = createDefaultFloorPlan(eff);
     this.model.doorZonesActive = eff.doorZones.map(() => true);

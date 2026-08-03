@@ -136,7 +136,13 @@ export class DesignerScene {
       }
       pos.needsUpdate = true;
     }
-    this.controls.update();
+    // Gated on enabled, not just called unconditionally - walk mode disables
+    // these controls and drives the camera itself, and an unconditional
+    // update() would silently snap the camera back to the orbit position
+    // every frame regardless of the enabled flag (three.js's OrbitControls
+    // doesn't skip its own position write when disabled - only user input
+    // is gated by that flag).
+    if (this.controls.enabled) this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }
 

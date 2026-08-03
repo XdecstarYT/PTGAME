@@ -144,8 +144,15 @@
             <button data-env="night" title="Night">🌙</button>
             <button data-env="rain" title="Rain">🌧️</button>
           </div>
+          <div class="designer-walk-buttons">
+            <button id="designer-walk-btn" title="Walk the interior in first person">🚶 Walk Interior</button>
+          </div>
           <canvas id="designer-viewport"></canvas>
           <div class="designer-stats" id="designer-stats"></div>
+          <div id="designer-walk-hud" class="hidden">
+            <span>WASD to move, mouse to look (click to lock cursor), E/Q to use stairs between decks, Esc to exit.</span>
+            <button id="designer-walk-exit" class="action secondary">← Exit Walk Mode</button>
+          </div>
         </div>
       </div>
     </div>
