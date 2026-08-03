@@ -91,6 +91,14 @@ export const STATION_ARCHITECTURE_STYLES = [
     id: 'minimal', name: 'Minimal Concrete', icon: '⬜',
     wall: 0xb7b4ac, trim: 0x8a877e, roof: 0x6e6b64, accent: 0xd8663d,
   },
+  {
+    // Curved glass-canopy vault with branching green ribs and a
+    // sky-mural ceiling, in the spirit of a bright futuristic transit hub -
+    // gets its own shell shape (see stationMeshBuilder.js/stationWalk.js)
+    // rather than the flat box+roof the other styles share.
+    id: 'futuristic', name: 'Futuristic Canopy', icon: '🌿',
+    wall: 0xf2f4f0, trim: 0x2f7a45, roof: 0xbfe6f2, accent: 0x3ee06a,
+  },
 ];
 
 export function stationArchitectureStyle(id) {

@@ -5,6 +5,7 @@ import {
 import { createDefaultStationDesign, addStationLevel, removeStationLevel } from './stationModel.js';
 import { computeStationStats } from './stationStatEngine.js';
 import { StationScene } from './stationScene.js';
+import { StationWalkController } from './stationWalk.js';
 
 // In-game Station Designer: pick a transit type + size tier, then paint
 // platforms/entrances/circulation/amenities per level on a 2D grid (the same
@@ -26,8 +27,15 @@ export class StationDesigner {
       showroomBtn: document.getElementById('station-showroom-btn'),
       newBtn: document.getElementById('station-new-btn'),
       saveBtn: document.getElementById('station-save-btn'),
+      walkBtn: document.getElementById('station-walk-btn'),
+      walkHud: document.getElementById('station-walk-hud'),
+      walkExitBtn: document.getElementById('station-walk-exit'),
     };
     this.scene = new StationScene(this.dom.canvas);
+    this.walk = new StationWalkController({
+      scene: this.scene,
+      onExit: () => this.dom.walkHud.classList.add('hidden'),
+    });
     this.isOpen = false;
     this.design = null;
     this.activeLevel = 0;
@@ -38,6 +46,11 @@ export class StationDesigner {
     this.dom.showroomBtn.addEventListener('click', () => this.openShowroom());
     this.dom.newBtn.addEventListener('click', () => this.newDesign());
     this.dom.saveBtn.addEventListener('click', () => this.save());
+    this.dom.walkBtn.addEventListener('click', () => {
+      this.walk.enter(this.design, this.activeLevel);
+      this.dom.walkHud.classList.remove('hidden');
+    });
+    this.dom.walkExitBtn.addEventListener('click', () => this.walk.exit());
   }
 
   open(onSave = null) {
@@ -49,9 +62,14 @@ export class StationDesigner {
     this.scene._resizeToContainer();
   }
 
-  close() { this.isOpen = false; this.dom.layer.classList.add('hidden'); }
+  close() {
+    this.isOpen = false;
+    this.dom.layer.classList.add('hidden');
+    if (this.walk.active) this.walk.exit();
+  }
 
   newDesign(typeId = 'bus_stop', tierId = 'small') {
+    if (this.walk.active) this.walk.exit();
     this.design = createDefaultStationDesign(typeId, tierId);
     this.activeLevel = 0;
     this._refreshAll();
@@ -60,12 +78,17 @@ export class StationDesigner {
   loadForEdit(designId) {
     const src = this.catalog.get(designId);
     if (!src) return;
+    if (this.walk.active) this.walk.exit();
     this.design = JSON.parse(JSON.stringify(src));
     this.activeLevel = 0;
     this.open();
   }
 
-  render() { if (this.isOpen) this.scene.render(); }
+  render(dtSeconds) {
+    if (!this.isOpen) return;
+    this.scene.render();
+    if (this.walk.active) this.walk.update(dtSeconds);
+  }
 
   _refreshAll() {
     this.scene.setDesign(this.design);
@@ -141,11 +164,13 @@ export class StationDesigner {
     document.getElementById('station-add-level')?.addEventListener('click', () => {
       if (!addStationLevel(this.design)) return;
       this.activeLevel = this.design.levels.length - 1;
+      if (this.walk.active) this.walk.exit();
       this._refreshAll();
     });
     document.getElementById('station-remove-level')?.addEventListener('click', () => {
       if (!removeStationLevel(this.design)) return;
       this.activeLevel = Math.min(this.activeLevel, this.design.levels.length - 1);
+      if (this.walk.active) this.walk.exit();
       this._refreshAll();
     });
     this.dom.tabContent.querySelectorAll('[data-arch-style]').forEach(btn => {

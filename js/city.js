@@ -385,11 +385,17 @@ export class City {
       }
     }
 
+    // Lots get a small gap between tile pads so buildings read as separated
+    // parcels; roads/bridges use a full-size (slightly overlapping) pad so
+    // adjacent road tiles form one continuous connected surface instead of
+    // visibly separate squares.
     const padGeo = new THREE.BoxGeometry(TILE_SIZE * 0.94, 0.2, TILE_SIZE * 0.94);
+    const roadPadGeo = new THREE.BoxGeometry(TILE_SIZE * 1.02, 0.2, TILE_SIZE * 1.02);
     for (const [type, tiles] of Object.entries(byType)) {
       const color = ZONE_COLORS[type] ?? 0x888888;
       const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.95 });
-      const mesh = new THREE.InstancedMesh(padGeo, mat, tiles.length);
+      const isRoadLike = type === ZONE.ROAD || type === ZONE.BRIDGE;
+      const mesh = new THREE.InstancedMesh(isRoadLike ? roadPadGeo : padGeo, mat, tiles.length);
       mesh.receiveShadow = true;
       const m = new THREE.Matrix4();
       tiles.forEach((t, i) => {

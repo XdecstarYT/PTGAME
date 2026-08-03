@@ -201,8 +201,15 @@
           <div class="designer-tab-content" id="station-tab-content"></div>
         </div>
         <div class="designer-preview">
+          <div class="designer-walk-buttons">
+            <button id="station-walk-btn" title="Walk the platform in first person">🚶 Walk Interior</button>
+          </div>
           <canvas id="station-viewport"></canvas>
           <div class="designer-stats" id="station-stats"></div>
+          <div id="station-walk-hud" class="hidden">
+            <span>WASD to move, mouse to look (click to lock cursor), E/Q to use stairs/escalators/elevators between levels, Esc to exit.</span>
+            <button id="station-walk-exit" class="action secondary">← Exit Walk Mode</button>
+          </div>
         </div>
       </div>
     </div>

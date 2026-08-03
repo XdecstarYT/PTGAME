@@ -306,7 +306,7 @@ function animate(now) {
   if (schematicView.visible) schematicView.render();
   if (vehicleDesigner.isOpen) vehicleDesigner.render(dt / 1000);
   if (buildingEditor.isOpen) buildingEditor.render(dt / 1000);
-  if (stationDesigner.isOpen) stationDesigner.render();
+  if (stationDesigner.isOpen) stationDesigner.render(dt / 1000);
   newsTicker.update(dt);
 
   hudAccum += dt;
