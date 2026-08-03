@@ -1,10 +1,21 @@
 import * as THREE from 'three';
-import { WALK_SPEED, MAX_ACCEPTABLE_TRIP_MINUTES, MAX_TRANSFERS } from './config.js';
+import { WALK_SPEED, MAX_ACCEPTABLE_TRIP_MINUTES, MAX_TRANSFERS, ZONE } from './config.js';
 import { TimeSystem } from './time.js';
 
 let _pId = 1;
 const BASE_SPAWN_RATE = 0.00045; // trips per person per sim-minute at peak demand multiplier
 const ABANDON_AFTER_MINUTES = 240; // safety net: gives up (counts as lost demand) if stuck this long
+// Landmark tiles were previously just slightly-bigger job centers - a trip
+// to/from one (more likely to be picked on weekends, see _spawnPassengers)
+// now counts as a "tourist" trip and pays a real fare premium in
+// _completeTrip(), the first thing that gives landmarks an economic
+// identity distinct from an ordinary office block.
+const TOURIST_FARE_MULTIPLIER = 1.5;
+// TimeSystem.demandMultiplier never exceeds 1 (it's normalized to the day's
+// own busiest hour) - hours at/below this baseline pay the flat fare, hours
+// above it scale smoothly up to +MAX_SURGE right at the absolute peak.
+const PEAK_PRICING_BASELINE = 0.5;
+const PEAK_PRICING_MAX_SURGE = 0.6;
 
 function pickWeighted(rng, candidates, weightFn) {
   let total = 0;
@@ -162,11 +173,11 @@ export class PassengerSystem {
     this._group = scene;
   }
 
-  spawnPassenger(originTile, destTile, hour) {
+  spawnPassenger(originTile, destTile, hour, isWeekend = false, isTourist = false) {
     const plan = planTrip(this.network, originTile, destTile);
     const id = `p${_pId++}`;
     const passenger = {
-      id, originTile, destTile, spawnHour: hour,
+      id, originTile, destTile, spawnHour: hour, isWeekend, isTourist,
       transfers: 0, totalWaitMinutes: 0, crowdingMisses: 0,
       routesUsed: [], comfortAccum: 0, reliabilityAccum: 0, stationQualityAccum: 0, ridesBoarded: 0,
     };
@@ -321,7 +332,22 @@ export class PassengerSystem {
     score = Math.max(0, Math.min(100, score));
     this.satisfactionSamples.push(score);
     if (this.satisfactionSamples.length > 400) this.satisfactionSamples.shift();
-    this.economy.earnFare(passenger.routesUsed.length ? passenger.routesUsed : ['unassigned']);
+
+    // Surge pricing (economy.peakPricingStrength, default 0/off) scales the
+    // fare by where this hour's demand curve sits relative to a baseline -
+    // TimeSystem.demandMultiplier is normalized to a [~0.15, 1] range (it
+    // never exceeds 1, so comparing it directly against 1 would never
+    // surge); PEAK_PRICING_BASELINE picks the point above which an hour
+    // counts as "peak", scaling smoothly up to PEAK_PRICING_MAX_SURGE right
+    // at the absolute busiest hour. A tourist premium stacks on top since
+    // both represent real willingness-to-pay above a routine commute, not a
+    // discount either way.
+    const peakDemand = TimeSystem.demandMultiplier(passenger.spawnHour, passenger.isWeekend);
+    const surgeRange = 1 - PEAK_PRICING_BASELINE;
+    const peakFactor = 1 + (Math.max(0, peakDemand - PEAK_PRICING_BASELINE) / surgeRange) * PEAK_PRICING_MAX_SURGE * this.economy.peakPricingStrength;
+    const fareMultiplier = peakFactor * (passenger.isTourist ? TOURIST_FARE_MULTIPLIER : 1);
+    if (passenger.isTourist) this.economy.recordTouristTrip();
+    this.economy.earnFare(passenger.routesUsed.length ? passenger.routesUsed : ['unassigned'], fareMultiplier);
     this.passengers.delete(passenger.id);
   }
 
@@ -369,9 +395,11 @@ export class PassengerSystem {
         const dest = pickWeighted(Math.random, jobsZones, (t) => {
           const jobs = this.city.effectiveJobs(t);
           const d = Math.hypot(t.worldX - tile.worldX, t.worldZ - tile.worldZ);
-          return jobs / (1 + d * 0.06);
+          // Landmarks draw extra weekend traffic - a day trip, not a commute.
+          const touristBoost = (t.type === ZONE.LANDMARK && isWeekend) ? 2.2 : 1;
+          return (jobs / (1 + d * 0.06)) * touristBoost;
         });
-        if (dest) this.spawnPassenger(tile, dest, hour);
+        if (dest) this.spawnPassenger(tile, dest, hour, isWeekend, dest.type === ZONE.LANDMARK);
       });
     }
 
@@ -385,7 +413,7 @@ export class PassengerSystem {
           const d = Math.hypot(t.worldX - tile.worldX, t.worldZ - tile.worldZ);
           return pop / (1 + d * 0.06);
         });
-        if (dest) this.spawnPassenger(tile, dest, hour);
+        if (dest) this.spawnPassenger(tile, dest, hour, isWeekend, tile.type === ZONE.LANDMARK);
       });
     }
   }

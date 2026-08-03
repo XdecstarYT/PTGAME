@@ -983,6 +983,8 @@ export class UIController {
       <div class="row"><span>Fare per trip</span><b>${fmtMoney(this.economy.fare)}</b></div>
       <div class="field"><label>Adjust fare</label>
         <input type="range" id="fare-slider" min="1" max="8" step="0.25" value="${this.economy.fare}"></div>
+      <div class="field"><label>Dynamic (surge) pricing: ${Math.round(this.economy.peakPricingStrength * 100)}% - fares rise during rush hour, never drop below the base fare</label>
+        <input type="range" id="peak-pricing-slider" min="0" max="100" step="5" value="${Math.round(this.economy.peakPricingStrength * 100)}"></div>
       <div style="margin:8px 0">
         <button class="action" id="loan-btn">Take $200,000 Loan (4%/wk)</button>
       </div>
@@ -1014,6 +1016,11 @@ export class UIController {
       <h4>Station Shops</h4>
       <div class="row"><span>Shop revenue today</span><b style="color:#6ee7c9">${fmtMoney(this.economy.dailyShopRevenue)}</b></div>
       <div class="row"><span>Shop revenue (all-time)</span><b>${fmtMoney(this.economy.totalShopRevenue)}</b></div>
+      <h4>Council &amp; Tourism</h4>
+      <div class="row"><span>Transit-accessibility bonus today</span><b style="color:#6ee7c9">${fmtMoney(this.economy.dailyAccessibilityBonus)}</b></div>
+      <div class="row"><span>Accessibility bonus (all-time)</span><b>${fmtMoney(this.economy.totalAccessibilityBonus)}</b></div>
+      <div class="row"><span>Tourist trips today / all-time</span><b>${this.economy.dailyTouristTrips} / ${this.economy.totalTouristTrips}</b></div>
+      <p class="designer-hint">Stations built near dense residential/job tiles earn a daily council bonus for serving them, whether or not anyone rides yet. Landmark-district trips (more common on weekends) pay a fare premium as day-tripper/tourist demand.</p>
       <h4>Network stats</h4>
       <div class="row"><span>Coverage</span><b>${Math.round(this.network.coveragePercent() * 100)}%</b></div>
       <div class="row"><span>Lost demand today</span><b>${this.economy.lostDemandToday}</b></div>
@@ -1027,6 +1034,7 @@ export class UIController {
     `;
     this.openModal('Finance Dashboard', html);
     document.getElementById('fare-slider')?.addEventListener('input', (e) => { this.economy.fare = Number(e.target.value); });
+    document.getElementById('peak-pricing-slider')?.addEventListener('input', (e) => { this.economy.peakPricingStrength = Number(e.target.value) / 100; });
     document.getElementById('loan-btn')?.addEventListener('click', () => {
       this.economy.takeLoan(200000);
       this.openFinanceModal();

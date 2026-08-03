@@ -8,6 +8,9 @@ import { computeStationShopRevenue } from './stations/stationStatEngine.js';
 // Budget, fares, operating costs and the finance dashboard's data feed.
 // Kept independent of rendering/network so it's easy to reason about.
 
+const ACCESSIBILITY_BONUS_PER_PERSON = 0.15; // $/day per resident+job served within a station's catchment
+const ACCESSIBILITY_BONUS_CAP_PER_STATION = 400; // $/day - keeps one mega-hub from dominating income
+
 export class Economy {
   constructor() {
     this.budget = STARTING_BUDGET;
@@ -20,6 +23,12 @@ export class Economy {
     this.weatherSpeedMultiplier = 1;  // surface (non-subway) speed during storms
     this.fuelPriceMultiplier = 1;     // running cost for combustion powertrains, on top of baseFuelIndex
     this.subsidyMultiplier = 1;       // government top-up per rider
+
+    // Player-adjustable "surge pricing" strength (0..1, default off) - see
+    // earnFare()'s fareMultiplier param. 0 keeps fares perfectly flat
+    // (identical to pre-existing behavior); 1 fully tracks
+    // TimeSystem.demandMultiplier's peak/off-peak curve.
+    this.peakPricingStrength = 0;
 
     // A slow-drifting fuel market index (separate from events.js's sudden
     // fuel_spike shocks) so combustion running costs feel like a live market
@@ -40,12 +49,16 @@ export class Economy {
     this.carTripsToday = 0;
     this.dailyFreightRevenue = 0;
     this.dailyShopRevenue = 0;
+    this.dailyAccessibilityBonus = 0;
+    this.dailyTouristTrips = 0;
 
     this.totalRevenue = 0;
     this.totalExpense = 0;
     this.totalRidership = 0;
     this.totalFreightRevenue = 0;
     this.totalShopRevenue = 0;
+    this.totalAccessibilityBonus = 0;
+    this.totalTouristTrips = 0;
 
     this.routeStats = new Map(); // routeId -> {revenueToday, costToday, revenueTotal, costTotal, ridersToday, ridersTotal}
     this.history = []; // per-day snapshots for the finance dashboard chart
@@ -75,9 +88,13 @@ export class Economy {
   }
 
   // Called once per *completed trip* (not per leg). Revenue is split evenly
-  // across every route the passenger actually rode.
-  earnFare(routeIds) {
-    const amount = this.fare + SUBSIDY_PER_RIDER * this.subsidyMultiplier;
+  // across every route the passenger actually rode. fareMultiplier (default
+  // 1, i.e. identical to the old flat-fare behavior) lets callers apply
+  // surge pricing and/or a tourist premium - see passengers.js's
+  // _completeTrip(), which computes it from peakPricingStrength and
+  // passenger.isTourist.
+  earnFare(routeIds, fareMultiplier = 1) {
+    const amount = this.fare * fareMultiplier + SUBSIDY_PER_RIDER * this.subsidyMultiplier;
     this.budget += amount;
     this.dailyIncome += amount;
     this.totalRevenue += amount;
@@ -114,6 +131,7 @@ export class Economy {
 
   recordLostDemand() { this.lostDemandToday += 1; }
   recordCarTrip() { this.carTripsToday += 1; }
+  recordTouristTrip() { this.dailyTouristTrips += 1; this.totalTouristTrips += 1; }
 
   takeLoan(amount) {
     this.budget += amount;
@@ -177,6 +195,34 @@ export class Economy {
       this.dailyShopRevenue += revenue;
       this.totalShopRevenue += revenue;
     }
+
+    // Council transit-accessibility bonus: a real subsidy for serving dense
+    // areas, on top of fare revenue - rewards station PLACEMENT directly
+    // (unlike fares, which only pay out once someone actually rides). Reuses
+    // the same catchment-radius-vs-demand-zone-tile pattern
+    // network.coveragePercent() already uses, just summing population/jobs
+    // served instead of counting tiles as covered/not.
+    if (network.city?.demandZones) {
+      const { residential, jobsZones } = network.city.demandZones();
+      for (const station of network.stations.values()) {
+        let served = 0;
+        for (const tile of residential) {
+          const d = Math.hypot(station.worldX - tile.worldX, station.worldZ - tile.worldZ);
+          if (d <= station.radius) served += network.city.effectivePopulation(tile);
+        }
+        for (const tile of jobsZones) {
+          const d = Math.hypot(station.worldX - tile.worldX, station.worldZ - tile.worldZ);
+          if (d <= station.radius) served += network.city.effectiveJobs(tile);
+        }
+        const bonus = Math.min(ACCESSIBILITY_BONUS_CAP_PER_STATION, served * ACCESSIBILITY_BONUS_PER_PERSON);
+        if (bonus <= 0) continue;
+        this.budget += bonus;
+        this.dailyIncome += bonus;
+        this.totalRevenue += bonus;
+        this.dailyAccessibilityBonus += bonus;
+        this.totalAccessibilityBonus += bonus;
+      }
+    }
   }
 
   applyWeeklyInterest() {
@@ -230,6 +276,8 @@ export class Economy {
       budget: this.budget,
       freightRevenue: this.dailyFreightRevenue,
       shopRevenue: this.dailyShopRevenue,
+      accessibilityBonus: this.dailyAccessibilityBonus,
+      touristTrips: this.dailyTouristTrips,
     });
     if (this.history.length > 120) this.history.shift();
     for (const r of this.routeStats.values()) { r.revenueToday = 0; r.costToday = 0; r.ridersToday = 0; }
@@ -240,6 +288,8 @@ export class Economy {
     this.carTripsToday = 0;
     this.dailyFreightRevenue = 0;
     this.dailyShopRevenue = 0;
+    this.dailyAccessibilityBonus = 0;
+    this.dailyTouristTrips = 0;
   }
 
   // ---------------- save/load ----------------
@@ -250,12 +300,15 @@ export class Economy {
       activeRegulationId: this.activeRegulationId, congestion: this.congestion,
       weatherSpeedMultiplier: this.weatherSpeedMultiplier,
       fuelPriceMultiplier: this.fuelPriceMultiplier, subsidyMultiplier: this.subsidyMultiplier,
+      peakPricingStrength: this.peakPricingStrength,
       baseFuelIndex: this.baseFuelIndex, _fuelDrift: this._fuelDrift,
       season: this.season, isRaining: this.isRaining,
       dailyIncome: this.dailyIncome, dailyExpense: this.dailyExpense, dailyRidership: this.dailyRidership,
       lostDemandToday: this.lostDemandToday, carTripsToday: this.carTripsToday,
       dailyFreightRevenue: this.dailyFreightRevenue, totalFreightRevenue: this.totalFreightRevenue,
       dailyShopRevenue: this.dailyShopRevenue, totalShopRevenue: this.totalShopRevenue,
+      dailyAccessibilityBonus: this.dailyAccessibilityBonus, totalAccessibilityBonus: this.totalAccessibilityBonus,
+      dailyTouristTrips: this.dailyTouristTrips, totalTouristTrips: this.totalTouristTrips,
       totalRevenue: this.totalRevenue, totalExpense: this.totalExpense, totalRidership: this.totalRidership,
       routeStats: [...this.routeStats.entries()],
       history: this.history,
