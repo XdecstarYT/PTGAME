@@ -483,6 +483,8 @@ html, body {
 .if-cell.if-standing { background: #90be6d; }
 .if-cell.if-wheelchair { background: #f9844a; }
 .if-cell.if-aisle { background: rgba(255,255,255,0.05); }
+.if-cell.if-luggage { background: #b08968; }
+.if-cell.if-stairs { background: #c9a63d; }
 .if-warning { color: var(--danger); font-size: 12px; margin-top: 8px; }
 
 .designer-preview {

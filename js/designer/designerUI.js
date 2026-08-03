@@ -37,6 +37,7 @@ export class VehicleDesigner {
     this.scene = new DesignerScene(this.dom.canvas);
     this.activeTab = 'chassis';
     this.model = null;
+    this.activeDeck = 0;
     this.roiAssumption = { ridership: null, fare: economy.fare };
     this.isOpen = false;
 
@@ -73,6 +74,7 @@ export class VehicleDesigner {
     const firstUnlockedCategory = ['bus', 'tram', 'subway'].find(c => VEHICLE_TYPES[c].unlocked) || 'bus';
     const chassis = chassisId ? chassisById(chassisId) : chassisForCategory(firstUnlockedCategory)[0];
     this.model = createDefaultModel(chassis.id);
+    this.activeDeck = 0;
     this.switchTab('chassis');
     this._refreshAll();
   }
@@ -82,6 +84,7 @@ export class VehicleDesigner {
     if (!src) return;
     this.model = JSON.parse(JSON.stringify(src));
     this._normalizeModel();
+    this.activeDeck = 0;
     this.open();
     this.switchTab('chassis');
     this._refreshAll();
@@ -99,6 +102,8 @@ export class VehicleDesigner {
     if (this.model.customLengthUnits === undefined) this.model.customLengthUnits = base.lengthUnits;
     if (this.model.customGridRows === undefined) this.model.customGridRows = base.gridRows;
     if (this.model.customDoorCount === undefined) this.model.customDoorCount = base.doorZones.length;
+    if (this.model.deckCount === undefined) this.model.deckCount = 1;
+    if (this.model.upperFloorPlan === undefined) this.model.upperFloorPlan = null;
   }
 
   switchTab(tab) {
@@ -173,6 +178,14 @@ export class VehicleDesigner {
       <div class="field"><label>Doors: ${eff.doorZones.length} (1-${maxDoorCountFor(eff.lengthUnits)})</label>
         <input type="range" id="doors-slider" min="1" max="${maxDoorCountFor(eff.lengthUnits)}" value="${eff.doorZones.length}"></div>
       <p class="designer-hint">Bigger vehicles cost and run for more but carry proportionally more passengers - resizing regenerates the floor plan, so repaint seats/aisles afterward.</p>
+      ${base.maxDecks >= 2 ? `
+        <h4>Decks</h4>
+        <div class="chassis-card-row">
+          <button class="action ${this.model.deckCount === 1 ? '' : 'secondary'}" data-decks="1">Single Deck</button>
+          <button class="action ${this.model.deckCount === 2 ? '' : 'secondary'}" data-decks="2">Double Decker</button>
+        </div>
+        <p class="designer-hint">A double-decker needs a staircase cell on each deck (paint one in the Interior tab) to connect the two levels.</p>
+      ` : ''}
     `;
 
     this.dom.tabContent.querySelectorAll('[data-chassis]').forEach(btn => {
@@ -189,6 +202,9 @@ export class VehicleDesigner {
         this.model.stepHeightCm = newChassis.defaultStepHeightCm;
         this.model.doorZonesActive = newChassis.doorZones.map(() => true);
         this.model.floorPlan = createDefaultModel(newChassis.id).floorPlan;
+        this.model.deckCount = 1;
+        this.model.upperFloorPlan = null;
+        this.activeDeck = 0;
         if (!sameCategory || !powertrainsForCategory(newChassis.category).some(p => p.id === this.model.powertrainId)) {
           this.model.powertrainId = powertrainsForCategory(newChassis.category)[0].id;
         }
@@ -216,6 +232,16 @@ export class VehicleDesigner {
       this._regenerateFloorPlanForCustomSize();
       this._refreshAll();
     });
+    this.dom.tabContent.querySelectorAll('[data-decks]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const decks = Number(btn.dataset.decks);
+        if (decks === this.model.deckCount) return;
+        this.model.deckCount = decks;
+        this.model.upperFloorPlan = decks === 2 ? createDefaultFloorPlan(this._chassis()) : null;
+        this.activeDeck = 0;
+        this._refreshAll();
+      });
+    });
   }
 
   // Length/width/door-count changes resize the floor plan grid itself, so
@@ -228,11 +254,22 @@ export class VehicleDesigner {
   }
 
   _tabInterior() {
+    const isDoubleDecker = this.model.deckCount === 2 && !!this.model.upperFloorPlan;
+    const deckTabs = isDoubleDecker ? `
+      <div class="chassis-card-row">
+        <button class="action ${this.activeDeck === 0 ? '' : 'secondary'}" data-deck="0">Lower Deck</button>
+        <button class="action ${this.activeDeck === 1 ? '' : 'secondary'}" data-deck="1">Upper Deck</button>
+      </div>
+    ` : '';
+
     this.dom.tabContent.innerHTML = `
+      ${deckTabs}
       <div class="if-toolbar">
         <button class="if-brush active" data-brush="seat">💺 Seat</button>
         <button class="if-brush" data-brush="standing">🧍 Standing</button>
         <button class="if-brush" data-brush="wheelchair">♿ Wheelchair Bay</button>
+        <button class="if-brush" data-brush="luggage">🧳 Luggage Rack</button>
+        ${isDoubleDecker ? '<button class="if-brush" data-brush="stairs">🪜 Stairs</button>' : ''}
         <button class="if-brush" data-brush="aisle">▫️ Aisle</button>
       </div>
       <div id="if-mount"></div>
@@ -245,13 +282,19 @@ export class VehicleDesigner {
     } else {
       this.interiorEditor.container = mount;
     }
-    this.interiorEditor.setModel(this.model, this._chassis());
+    this.interiorEditor.setModel(this.model, this._chassis(), this.activeDeck);
 
     this.dom.tabContent.querySelectorAll('.if-brush').forEach(btn => {
       btn.addEventListener('click', () => {
         this.dom.tabContent.querySelectorAll('.if-brush').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         this.interiorEditor.setBrush(btn.dataset.brush);
+      });
+    });
+    this.dom.tabContent.querySelectorAll('[data-deck]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.activeDeck = Number(btn.dataset.deck);
+        this._tabInterior();
       });
     });
   }
@@ -372,6 +415,7 @@ export class VehicleDesigner {
       <div class="row"><span>Emissions</span><b>${s.emissionsScore}</b></div>
       <div class="row"><span>Compliance (${s.ruleset.label})</span><b style="color:${s.compliance.compliant ? '#6ee7c9' : '#ff6b6b'}">${s.compliance.compliant ? 'OK' : s.compliance.violations.length + ' issue(s)'}</b></div>
       ${!s.connected ? '<div class="row violation">⚠️ Interior has no clear front-to-back aisle path</div>' : ''}
+      ${s.isDoubleDecker && !s.stairsConnected ? '<div class="row violation">⚠️ Add a staircase cell on both decks to connect them</div>' : ''}
     `;
   }
 

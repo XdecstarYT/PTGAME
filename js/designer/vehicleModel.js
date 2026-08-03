@@ -37,6 +37,8 @@ export function createDefaultModel(chassisId) {
     stepHeightCm: chassis.defaultStepHeightCm,
     doorZonesActive: chassis.doorZones.map(() => true),
     floorPlan: createDefaultFloorPlan(chassis),
+    deckCount: 1,
+    upperFloorPlan: null,
     livery: { primary: '#3a6ea5', secondary: '#f4f0ff', pattern: 'stripe', operatorName: '' },
     features: defaultFeatures(),
     thumbnail: null,
@@ -79,9 +81,14 @@ export function computeStats(model, opts = {}) {
   const chassis = effectiveChassis(model);
   const powertrain = powertrainById(model.powertrainId);
 
-  const seatCount = countCells(model.floorPlan, 'seat');
-  const standingCells = countCells(model.floorPlan, 'standing');
-  const wheelchairCells = countCells(model.floorPlan, 'wheelchair');
+  const isDoubleDecker = model.deckCount === 2 && !!model.upperFloorPlan;
+  const decks = isDoubleDecker ? [model.floorPlan, model.upperFloorPlan] : [model.floorPlan];
+  const sumDecks = (type) => decks.reduce((sum, plan) => sum + countCells(plan, type), 0);
+
+  const seatCount = sumDecks('seat');
+  const standingCells = sumDecks('standing');
+  const wheelchairCells = sumDecks('wheelchair');
+  const luggageCells = sumDecks('luggage');
 
   const capacitySeatedPerCar = seatCount;
   const capacityStandingPerCar = standingCells * 1.5 + wheelchairCells;
@@ -91,7 +98,10 @@ export function computeStats(model, opts = {}) {
   const doorCount = model.doorZonesActive.filter(Boolean).length;
   const accessibleBays = wheelchairCells;
 
-  const interiorFitoutPerCar = seatCount * 150 + standingCells * 60 + wheelchairCells * 500;
+  // A second deck only needs its own seats/standing/wheelchair fitout - the
+  // stairs/deck structure premium is folded into the chassis cost below.
+  const interiorFitoutPerCar = seatCount * 150 + standingCells * 60 + wheelchairCells * 500 + luggageCells * 80;
+  const deckCostMult = isDoubleDecker ? 1.6 : 1;
 
   const features = model.features || {};
   const activeFeatures = FEATURE_DEFS.filter(f => features[f.id]);
@@ -102,17 +112,19 @@ export function computeStats(model, opts = {}) {
   const prioritySeats = Math.min(MAX_PRIORITY_SEATS, seatCount, features.prioritySeats || 0);
   const priorityComfortBonus = prioritySeats * PRIORITY_SEAT_COMFORT_BONUS_EACH;
 
-  const purchaseCost = Math.round((chassis.baseCostPerCar * powertrain.costMult + interiorFitoutPerCar + featureCostPerCar) * model.consistCars + 2000);
-  const runningCostPerDay = Math.round((chassis.baseRunningCostPerCar * powertrain.runningCostMult + featureRunningCostPerCar) * model.consistCars);
+  const purchaseCost = Math.round((chassis.baseCostPerCar * powertrain.costMult * deckCostMult + interiorFitoutPerCar + featureCostPerCar) * model.consistCars + 2000);
+  const runningCostPerDay = Math.round((chassis.baseRunningCostPerCar * powertrain.runningCostMult * deckCostMult + featureRunningCostPerCar) * model.consistCars);
 
   const consistSpeedPenalty = 1 - Math.min(0.25, 0.015 * (model.consistCars - 1));
-  const topSpeed = Math.round(chassis.baseSpeed * powertrain.speedMult * consistSpeedPenalty * 10) / 10;
+  const deckSpeedPenalty = isDoubleDecker ? 0.94 : 1;
+  const topSpeed = Math.round(chassis.baseSpeed * powertrain.speedMult * consistSpeedPenalty * deckSpeedPenalty * 10) / 10;
 
   const standingRatio = capacityTotalPerCar > 0 ? capacityStandingPerCar / capacityTotalPerCar : 0;
   const aisleSpan = Math.max(1, chassis.maxAisleWidthCm - chassis.minAisleWidthCm);
   const aisleBonus = (model.aisleWidthCm - chassis.minAisleWidthCm) / aisleSpan;
+  const luggageBonus = Math.min(6, luggageCells * 1.2);
   const comfortScore = Math.round(Math.max(0, Math.min(100,
-    78 - standingRatio * 35 + aisleBonus * 20 + featureComfortBonus + priorityComfortBonus)));
+    78 - standingRatio * 35 + aisleBonus * 20 + featureComfortBonus + priorityComfortBonus + luggageBonus)));
 
   const boardingSpeedScore = Math.round(Math.max(0, Math.min(100, 40 + doorCount * 13)));
   const reliabilityBase = Math.round(Math.max(10, Math.min(100, 92 + powertrain.reliabilityMod + featureReliabilityBonus)));
@@ -126,7 +138,8 @@ export function computeStats(model, opts = {}) {
     { doorCount, accessibleBays, aisleWidthCm: model.aisleWidthCm, stepHeightCm: model.stepHeightCm },
     ruleset
   );
-  const connected = checkAisleConnectivity(model.floorPlan);
+  const connected = decks.every(plan => checkAisleConnectivity(plan));
+  const stairsConnected = !isDoubleDecker || decks.every(plan => countCells(plan, 'stairs') >= 1);
 
   const assumedRidership = opts.ridershipAssumption ?? Math.max(1, Math.round(capacityTotal * 3.5));
   const assumedFare = opts.fareAssumption ?? 3;
@@ -146,5 +159,6 @@ export function computeStats(model, opts = {}) {
     paybackDays, runningCostPerPassenger,
     assumedRidership, assumedFare,
     activeFeatures, featureCostPerCar, featureRunningCostPerCar, prioritySeats,
+    isDoubleDecker, stairsConnected, luggageCells,
   };
 }

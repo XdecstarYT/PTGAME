@@ -15,7 +15,7 @@ export const CHASSIS_DEFS = [
   },
   {
     id: 'bus_standard', category: 'bus', manufacturer: 'Roadster', name: 'Roadster Standard',
-    lengthUnits: 8, gridRows: 3, gridCols: 8, doorZones: [0, 5],
+    lengthUnits: 8, gridRows: 3, gridCols: 8, doorZones: [0, 5], maxDecks: 2,
     minLengthUnits: 6, maxLengthUnits: 10, minGridRows: 2, maxGridRows: 4,
     baseCostPerCar: 45000, baseSpeed: 42, baseRunningCostPerCar: 550,
     minConsist: 1, maxConsist: 1,
@@ -24,7 +24,7 @@ export const CHASSIS_DEFS = [
   },
   {
     id: 'bus_articulated', category: 'bus', manufacturer: 'Roadster', name: 'Roadster Articulated',
-    lengthUnits: 12, gridRows: 3, gridCols: 12, doorZones: [0, 5, 10],
+    lengthUnits: 12, gridRows: 3, gridCols: 12, doorZones: [0, 5, 10], maxDecks: 2,
     minLengthUnits: 10, maxLengthUnits: 16, minGridRows: 3, maxGridRows: 4,
     baseCostPerCar: 70000, baseSpeed: 39, baseRunningCostPerCar: 780,
     minConsist: 1, maxConsist: 1,
@@ -51,7 +51,7 @@ export const CHASSIS_DEFS = [
   },
   {
     id: 'tram_t1_long', category: 'tram', manufacturer: 'Continental', name: 'Continental T1 Long',
-    lengthUnits: 14, gridRows: 4, gridCols: 14, doorZones: [0, 4, 9, 13],
+    lengthUnits: 14, gridRows: 4, gridCols: 14, doorZones: [0, 4, 9, 13], maxDecks: 2,
     minLengthUnits: 12, maxLengthUnits: 18, minGridRows: 3, maxGridRows: 5,
     baseCostPerCar: 125000, baseSpeed: 67, baseRunningCostPerCar: 1400,
     minConsist: 1, maxConsist: 3,
@@ -68,7 +68,7 @@ export const CHASSIS_DEFS = [
     defaultStepHeightCm: 10, minStepHeightCm: 0, maxStepHeightCm: 30,
   },
   {
-    id: 'metro_m4', category: 'subway', manufacturer: 'Metro', name: 'Metro M4',
+    id: 'metro_m4', category: 'subway', manufacturer: 'Metro', name: 'Metro M4', maxDecks: 2,
     lengthUnits: 14, gridRows: 5, gridCols: 14, doorZones: [0, 3, 6, 9, 13],
     minLengthUnits: 12, maxLengthUnits: 18, minGridRows: 4, maxGridRows: 6,
     baseCostPerCar: 210000, baseSpeed: 128, baseRunningCostPerCar: 2200,
@@ -77,7 +77,7 @@ export const CHASSIS_DEFS = [
     defaultStepHeightCm: 8, minStepHeightCm: 0, maxStepHeightCm: 25,
   },
   {
-    id: 'metro_m6', category: 'subway', manufacturer: 'Metro', name: 'Metro M6 Express',
+    id: 'metro_m6', category: 'subway', manufacturer: 'Metro', name: 'Metro M6 Express', maxDecks: 2,
     lengthUnits: 16, gridRows: 5, gridCols: 16, doorZones: [0, 3, 6, 9, 12, 15],
     minLengthUnits: 14, maxLengthUnits: 20, minGridRows: 4, maxGridRows: 6,
     baseCostPerCar: 250000, baseSpeed: 142, baseRunningCostPerCar: 2600,

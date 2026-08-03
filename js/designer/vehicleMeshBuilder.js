@@ -63,7 +63,11 @@ export function buildExteriorMesh(model, chassis) {
   const group = new THREE.Group();
   const carLen = chassis.lengthUnits;
   const carWidth = 2.2 + chassis.gridRows * 0.5;
-  const carHeight = chassis.category === 'bus' ? 3.0 : chassis.category === 'tram' ? 3.3 : 3.5;
+  const baseHeight = chassis.category === 'bus' ? 3.0 : chassis.category === 'tram' ? 3.3 : 3.5;
+  // A double-decker isn't two stacked car bodies - it's one taller shell with
+  // two window bands, the way a real double-decker bus actually looks.
+  const isDoubleDecker = model.deckCount === 2 && !!model.upperFloorPlan;
+  const carHeight = isDoubleDecker ? baseHeight * 1.75 : baseHeight;
   const gap = 0.6;
   const totalLen = model.consistCars * carLen + (model.consistCars - 1) * gap;
   let x = -totalLen / 2;
@@ -115,18 +119,31 @@ export function buildExteriorMesh(model, chassis) {
     carGroup.add(roofCap);
 
     // Individual window panes with thin body-color mullions between them,
-    // instead of one continuous band.
+    // instead of one continuous band. A double-decker gets two bands (one
+    // per deck) plus a trim line marking the floor between them, instead of
+    // the single band a normal single-level body has.
     const paneCount = Math.max(2, Math.round(carLen / 1.3));
     const paneGap = 0.08;
     const paneWidth = (carLen * 0.9) / paneCount - paneGap;
     const paneStartX = -carLen * 0.45 + paneWidth / 2;
-    for (let p = 0; p < paneCount; p++) {
-      const pane = new THREE.Mesh(
-        new THREE.BoxGeometry(paneWidth, carHeight * 0.3, carWidth * 1.01),
-        windowMat,
-      );
-      pane.position.set(paneStartX + p * (paneWidth + paneGap), carHeight * 0.7 + 0.4, 0);
-      carGroup.add(pane);
+    const addWindowBand = (yFrac, heightFrac) => {
+      for (let p = 0; p < paneCount; p++) {
+        const pane = new THREE.Mesh(
+          new THREE.BoxGeometry(paneWidth, carHeight * heightFrac, carWidth * 1.01),
+          windowMat,
+        );
+        pane.position.set(paneStartX + p * (paneWidth + paneGap), carHeight * yFrac + 0.4, 0);
+        carGroup.add(pane);
+      }
+    };
+    if (isDoubleDecker) {
+      addWindowBand(0.3, 0.22);
+      addWindowBand(0.76, 0.22);
+      const deckTrim = new THREE.Mesh(new THREE.BoxGeometry(carLen * 0.99, 0.08, carWidth * 1.02), trimMat);
+      deckTrim.position.y = carHeight * 0.53 + 0.4;
+      carGroup.add(deckTrim);
+    } else {
+      addWindowBand(0.7, 0.3);
     }
 
     const interiorLight = new THREE.Mesh(
@@ -183,24 +200,27 @@ export function buildExteriorMesh(model, chassis) {
     // transit door-status light.
     const doorInsetMat = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.4, metalness: 0.3 });
     const doorLedMat = new THREE.MeshStandardMaterial({ color: 0xffa53d, emissive: 0xffa53d, emissiveIntensity: 0.5 });
+    // Real double-decker doors only open onto the lower deck, so door height
+    // is always sized off baseHeight (one deck), never the doubled carHeight.
+    const doorRefHeight = isDoubleDecker ? baseHeight : carHeight;
     for (const doorCol of chassis.doorZones || []) {
       const doorX = -carLen / 2 + (doorCol + 0.5) * (carLen / chassis.gridCols);
       const doorWidth = carLen / chassis.gridCols * 0.7;
       for (const side of [1, -1]) {
         const doorPanel = new THREE.Mesh(
-          new THREE.BoxGeometry(doorWidth, carHeight * 0.5, 0.03),
+          new THREE.BoxGeometry(doorWidth, doorRefHeight * 0.5, 0.03),
           doorInsetMat,
         );
-        doorPanel.position.set(doorX, carHeight * 0.42 + 0.4, side * (carWidth / 2 + 0.016));
+        doorPanel.position.set(doorX, doorRefHeight * 0.42 + 0.4, side * (carWidth / 2 + 0.016));
         carGroup.add(doorPanel);
 
         // A thin seam splitting the panel into a double-leaf sliding door.
-        const seam = new THREE.Mesh(new THREE.BoxGeometry(0.02, carHeight * 0.48, 0.035), skirtMat);
-        seam.position.set(doorX, carHeight * 0.42 + 0.4, side * (carWidth / 2 + 0.018));
+        const seam = new THREE.Mesh(new THREE.BoxGeometry(0.02, doorRefHeight * 0.48, 0.035), skirtMat);
+        seam.position.set(doorX, doorRefHeight * 0.42 + 0.4, side * (carWidth / 2 + 0.018));
         carGroup.add(seam);
 
         const led = new THREE.Mesh(new THREE.BoxGeometry(doorWidth * 0.5, 0.05, 0.03), doorLedMat);
-        led.position.set(doorX, carHeight * 0.42 + 0.4 + carHeight * 0.27, side * (carWidth / 2 + 0.016));
+        led.position.set(doorX, doorRefHeight * 0.42 + 0.4 + doorRefHeight * 0.27, side * (carWidth / 2 + 0.016));
         carGroup.add(led);
       }
     }
